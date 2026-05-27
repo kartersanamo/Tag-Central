@@ -20,6 +20,30 @@ class TestExportQueueService(unittest.TestCase):
         self.assertTrue(queue.remove(entry.change_id))
         self.assertEqual(queue.count(), 0)
 
+    def test_duplicate_tag_replaces_instead_of_appending(self) -> None:
+        queue = ExportQueueService()
+        first = queue.add(
+            "C-LEGACY",
+            {"Name": "AFT_DRAFT_SETPOINT", "Description": "AFT DRAFT SETPOINT", "IOAddress": "%R00113"},
+            baseline={"Name": "AFT_DRAFT_SETPOINT", "Description": "", "IOAddress": "%R00113"},
+        )
+        second = queue.add_if_different(
+            "C-LEGACY",
+            {"Name": "AFT_DRAFT_SETPOINT", "Description": "AFT DRAFT SETPOINT", "IOAddress": "%R00113"},
+            {
+                "Name": "AFT_DRAFT_SETPOINT",
+                "Description": "FWD DRAFT OFFSET SET POINT",
+                "IOAddress": "%R00113",
+            },
+        )
+        self.assertIs(second, first)
+        self.assertEqual(queue.count(), 1)
+        self.assertEqual(
+            second.row_data["Description"],
+            "FWD DRAFT OFFSET SET POINT",
+        )
+        self.assertEqual(first.baseline["Description"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

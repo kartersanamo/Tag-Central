@@ -37,11 +37,25 @@ def changed_field_labels(
     return labels or ["(updated)"]
 
 
+def _export_tag_name(row: dict[str, str]) -> str:
+    return str(row.get("Name", "")).strip().upper()
+
+
 class ExportQueueService:
     """In-memory Proficy export queue keyed by vessel."""
 
     def __init__(self) -> None:
         self._by_vessel: dict[str, list[PendingExportChange]] = {}
+
+    def _find_entry(self, vessel: str, row_data: dict[str, str]) -> PendingExportChange | None:
+        tag_name = _export_tag_name(row_data)
+        if not tag_name:
+            return None
+        vessel_key = vessel.strip().upper() or "GLOBAL"
+        for entry in self._by_vessel.get(vessel_key, []):
+            if _export_tag_name(entry.row_data) == tag_name:
+                return entry
+        return None
 
     def clear(self) -> None:
         self._by_vessel.clear()
@@ -58,6 +72,13 @@ class ExportQueueService:
         row_data: dict[str, str],
         baseline: dict[str, str] | None = None,
     ) -> PendingExportChange:
+        existing = self._find_entry(vessel, row_data)
+        if existing is not None:
+            if baseline is not None and existing.baseline is None:
+                existing.baseline = dict(baseline)
+            existing.row_data = dict(row_data)
+            return existing
+
         entry = PendingExportChange(
             vessel=vessel.strip().upper() or "GLOBAL",
             row_data=dict(row_data),
@@ -76,6 +97,14 @@ class ExportQueueService:
             updated_row
         ):
             return None
+
+        existing = self._find_entry(vessel, updated_row)
+        if existing is not None:
+            if existing.baseline is None:
+                existing.baseline = dict(original_row)
+            existing.row_data = dict(updated_row)
+            return existing
+
         return self.add(vessel, updated_row, baseline=original_row)
 
     def all_entries(self) -> list[PendingExportChange]:

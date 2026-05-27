@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -45,20 +46,22 @@ class ExportValidationService:
             loaded.append(row)
         result.found_count = len(loaded)
 
-        loaded_by_name: dict[str, dict[str, str]] = {}
+        loaded_by_name: dict[str, deque[dict[str, str]]] = defaultdict(deque)
         for row in loaded:
             name = str(row.get("Name", "")).strip().upper()
             if name:
-                loaded_by_name[name] = row
+                loaded_by_name[name].append(row)
 
         for expected in expected_rows:
             name = str(expected.get("Name", "")).strip().upper()
             if not name:
                 continue
-            actual = loaded_by_name.get(name)
-            if actual is None:
+            bucket = loaded_by_name.get(name)
+            if not bucket:
                 result.missing.append(name)
                 continue
+            actual = bucket.popleft()
             if export_fields_for_compare(actual) != export_fields_for_compare(expected):
-                result.field_mismatches.append(name)
+                if name not in result.field_mismatches:
+                    result.field_mismatches.append(name)
         return result
