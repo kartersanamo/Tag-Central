@@ -38,6 +38,7 @@ from ui.cimplicity_review_dialog import CimplicityReviewDialog
 from ui.cimplicity_sync_dialog import CimplicitySyncDialog
 from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
+from ui.loading_dialog import LoadingDialog
 from ui.main_window import MainWindow
 from ui.missing_description_dialog import MissingDescriptionDialog
 
@@ -1047,16 +1048,27 @@ class AppController:
             messagebox.showwarning("Invalid Vessel", "Vessel name cannot be empty.")
             return
 
+        loading = LoadingDialog(self._window.root, title="Importing Cimplicity...")
         try:
-            raw_rows = self._cimplicity_loader.load_rows(file_path)
-        except Exception as error:
-            messagebox.showerror("Cimplicity Import Error", str(error))
-            return
+            loading.show("Loading Cimplicity CSV...")
+            try:
+                raw_rows = self._cimplicity_loader.load_rows(file_path)
+            except Exception as error:
+                loading.close()
+                messagebox.showerror("Cimplicity Import Error", str(error))
+                return
 
-        prepared = self._cross_program.prepare_cimplicity_rows(raw_rows)
-        analysis = self._cross_program.analyze_cimplicity_import(
-            self._tags, prepared, vessel
-        )
+            loading.update_status("Normalizing imported rows...")
+            prepared = self._cross_program.prepare_cimplicity_rows(raw_rows)
+
+            loading.update_status(
+                f"Analyzing sync state for {len(prepared)} rows..."
+            )
+            analysis = self._cross_program.analyze_cimplicity_import(
+                self._tags, prepared, vessel
+            )
+        finally:
+            loading.close()
 
         summary = {
             "total_rows": len(prepared),
@@ -1094,99 +1106,118 @@ class AppController:
                 return
             decisions = result
 
-        row_by_index = {row.row_index: row for row in prepared}
-        row_by_pt_id = {row.pt_id: row for row in prepared}
-        for decision in decisions:
-            row_index = int(decision.get("row_index", -1))
-            row = row_by_index.get(row_index) or row_by_pt_id.get(
-                str(decision.get("pt_id", "")).strip().upper()
-            )
-            if row is None:
-                continue
-            action = decision.get("action", "skip")
-            if action == "skip":
-                summary["skipped"] += 1
-                continue
-
-            stale_tag = str(decision.get("existing_tag", "")).strip().upper()
-            link = self._cross_program._linker.link_cimplicity_row(
-                self._tags, row.pt_id, row.address
-            )
-            canonical_tag = self._cross_program.resolve_tag_key(
-                self._tags, row, link, preferred_key=stale_tag or None
-            )
-            if canonical_tag is None and action not in {"skip", "flag_manual_cimplicity"}:
-                summary["skipped"] += 1
-                continue
-
-            changed, export_row = self._cross_program.apply_cimplicity_row(
-                self._tags,
-                row,
-                vessel,
-                action,
-                canonical_tag=canonical_tag,
-            )
-            if action == "flag_manual_cimplicity":
-                summary["manual_cimplicity_flags"] += 1
-                self._cimplicity_manual_entries.append(
-                    {
-                        "PT_ID": row.pt_id,
-                        "field": "manual_review",
-                        "current": row.description,
-                        "recommended": row.description,
-                        "reason": decision.get("issue", "flagged"),
-                    }
+        loading_apply = LoadingDialog(self._window.root, title="Applying Cimplicity Sync...")
+        loading_apply.show("Applying your sync decisions...")
+        try:
+            row_by_index = {row.row_index: row for row in prepared}
+            row_by_pt_id = {row.pt_id: row for row in prepared}
+            for decision_index, decision in enumerate(decisions, start=1):
+                if decision_index == 1 or decision_index % 25 == 0:
+                    loading_apply.update_status(
+                        f"Applying decisions... {decision_index}/{len(decisions)}"
+                    )
+                row_index = int(decision.get("row_index", -1))
+                row = row_by_index.get(row_index) or row_by_pt_id.get(
+                    str(decision.get("pt_id", "")).strip().upper()
                 )
-                continue
+                if row is None:
+                    continue
+                action = decision.get("action", "skip")
+                if action == "skip":
+                    summary["skipped"] += 1
+                    continue
 
-            if action == "align_proficy" and changed:
-                summary["auto_aligned"] += 1
-                if export_row:
-                    self._queue_change(vessel=vessel, row_data=export_row)
-                    summary["proficy_exports_queued"] += 1
-            elif action == "link_only" and changed:
-                summary["linked_synced"] += 1
-
-        for row in prepared:
-            if any(int(d.get("row_index", -1)) == row.row_index for d in decisions):
-                continue
-            link = self._cross_program._linker.link_cimplicity_row(
-                self._tags, row.pt_id, row.address
-            )
-            if link.canonical_tag and not self._cross_program._detect_issues(
-                self._tags[link.canonical_tag], row
-            ):
-                self._cross_program.apply_cimplicity_row(
-                    self._tags, row, vessel, "link_only", canonical_tag=link.canonical_tag
+                stale_tag = str(decision.get("existing_tag", "")).strip().upper()
+                link = self._cross_program._linker.link_cimplicity_row(
+                    self._tags, row.pt_id, row.address
                 )
-                summary["linked_synced"] += 1
-
-        from datetime import datetime, timezone
-
-        from services.cimplicity_review_queue import ReviewQueueItem
-
-        for row in prepared:
-            link = self._cross_program._linker.link_cimplicity_row(
-                self._tags, row.pt_id, row.address
-            )
-            if link.canonical_tag or link.ambiguous_tags:
-                continue
-            self._cross_program.review_queue.add(
-                ReviewQueueItem(
-                    vessel=vessel,
-                    pt_id=row.pt_id,
-                    description=row.description,
-                    address=row.address,
-                    row_data=row.row_data,
-                    imported_at=datetime.now(timezone.utc).isoformat(),
+                canonical_tag = self._cross_program.resolve_tag_key(
+                    self._tags, row, link, preferred_key=stale_tag or None
                 )
-            )
+                if canonical_tag is None and action not in {"skip", "flag_manual_cimplicity"}:
+                    summary["skipped"] += 1
+                    continue
 
-        self._persist_tags()
-        self._refresh_filter_values()
-        self._update_review_queue_indicator()
-        self.clear_inline_find_replace(refresh=False)
-        self.refresh_table()
+                changed, export_row = self._cross_program.apply_cimplicity_row(
+                    self._tags,
+                    row,
+                    vessel,
+                    action,
+                    canonical_tag=canonical_tag,
+                )
+                if action == "flag_manual_cimplicity":
+                    summary["manual_cimplicity_flags"] += 1
+                    self._cimplicity_manual_entries.append(
+                        {
+                            "PT_ID": row.pt_id,
+                            "field": "manual_review",
+                            "current": row.description,
+                            "recommended": row.description,
+                            "reason": decision.get("issue", "flagged"),
+                        }
+                    )
+                    continue
+
+                if action == "align_proficy" and changed:
+                    summary["auto_aligned"] += 1
+                    if export_row:
+                        self._queue_change(vessel=vessel, row_data=export_row)
+                        summary["proficy_exports_queued"] += 1
+                elif action == "link_only" and changed:
+                    summary["linked_synced"] += 1
+
+            for row_index, row in enumerate(prepared, start=1):
+                if row_index == 1 or row_index % 200 == 0:
+                    loading_apply.update_status(
+                        f"Linking unchanged rows... {row_index}/{len(prepared)}"
+                    )
+                if any(int(d.get("row_index", -1)) == row.row_index for d in decisions):
+                    continue
+                link = self._cross_program._linker.link_cimplicity_row(
+                    self._tags, row.pt_id, row.address
+                )
+                if link.canonical_tag and not self._cross_program._detect_issues(
+                    self._tags[link.canonical_tag], row
+                ):
+                    self._cross_program.apply_cimplicity_row(
+                        self._tags, row, vessel, "link_only", canonical_tag=link.canonical_tag
+                    )
+                    summary["linked_synced"] += 1
+
+            from datetime import datetime, timezone
+
+            from services.cimplicity_review_queue import ReviewQueueItem
+
+            for row_index, row in enumerate(prepared, start=1):
+                if row_index == 1 or row_index % 200 == 0:
+                    loading_apply.update_status(
+                        f"Updating review queue... {row_index}/{len(prepared)}"
+                    )
+                link = self._cross_program._linker.link_cimplicity_row(
+                    self._tags, row.pt_id, row.address
+                )
+                if link.canonical_tag or link.ambiguous_tags:
+                    continue
+                self._cross_program.review_queue.add(
+                    ReviewQueueItem(
+                        vessel=vessel,
+                        pt_id=row.pt_id,
+                        description=row.description,
+                        address=row.address,
+                        row_data=row.row_data,
+                        imported_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                )
+
+            loading_apply.update_status("Saving database and refreshing UI...")
+            self._persist_tags()
+            self._refresh_filter_values()
+            self._update_review_queue_indicator()
+            self.clear_inline_find_replace(refresh=False)
+            self.refresh_table()
+        finally:
+            loading_apply.close()
+
         self._notify_cimplicity_import_complete(summary)
 
     def import_spreadsheet(self) -> None:
