@@ -229,8 +229,12 @@ class AppController:
         loading.show("Loading tags database from disk...")
         try:
             self._tags = self._repository.load()
+            self._cross_program.review_queue.load()
+            self._manual_tasks.load()
             loading.update_status("Refreshing filters and table...")
             self._refresh_filter_values()
+            self._update_review_queue_indicator()
+            self._update_manual_tasks_indicator()
             self.refresh_table()
         finally:
             loading.close()
