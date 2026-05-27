@@ -137,6 +137,19 @@ class AppController:
             return
 
         exports: dict[str, list[dict[str, object]]] = {}
+        summary = {
+            "total_rows": len(rows),
+            "rows_missing_required": 0,
+            "unchanged_matches": 0,
+            "conflicts_detected": 0,
+            "skipped_by_user": 0,
+            "resolved_use_imported": 0,
+            "resolved_use_existing": 0,
+            "resolved_keep_both": 0,
+            "new_tags_created": 0,
+            "existing_tags_updated": 0,
+            "merged_to_existing": 0,
+        }
         total_conflicts = self._count_initial_conflicts(rows)
         resolved_conflicts = 0
         conflict_dialog = ConflictDialog(self._window.root) if total_conflicts else None
@@ -146,7 +159,15 @@ class AppController:
                 imported_tag = row_data.get("Name", "").strip().upper()
                 imported_description = row_data.get("Description", "").strip().upper()
                 if not imported_tag or not imported_description:
+                    summary["rows_missing_required"] += 1
                     continue
+
+                existing_same_tag = self._tags.get(imported_tag)
+                if (
+                    existing_same_tag is not None
+                    and existing_same_tag.description == imported_description
+                ):
+                    summary["unchanged_matches"] += 1
 
                 conflict = self._sync.find_conflict(
                     self._tags,
@@ -162,8 +183,13 @@ class AppController:
                         vessel=vessel,
                         row_data=row_data,
                     )
+                    if existing_same_tag is None:
+                        summary["new_tags_created"] += 1
+                    else:
+                        summary["existing_tags_updated"] += 1
                     continue
 
+                summary["conflicts_detected"] += 1
                 resolved_conflicts += 1
                 existing_tag, existing_record = conflict
                 if conflict_dialog is None:
@@ -181,6 +207,7 @@ class AppController:
 
                 action = resolution.get("action", "skip")
                 if action == "skip":
+                    summary["skipped_by_user"] += 1
                     continue
 
                 if action == "use_imported":
@@ -191,10 +218,17 @@ class AppController:
                         vessel=vessel,
                         row_data=row_data,
                     )
+                    summary["resolved_use_imported"] += 1
+                    if existing_same_tag is None:
+                        summary["new_tags_created"] += 1
+                    else:
+                        summary["existing_tags_updated"] += 1
                     continue
 
                 if action == "use_existing":
                     self._sync.add_vessel_to_existing(self._tags, existing_tag, vessel)
+                    summary["resolved_use_existing"] += 1
+                    summary["merged_to_existing"] += 1
                     self._add_export_if_changed(
                         exports,
                         vessel,
@@ -213,6 +247,8 @@ class AppController:
                         vessel=vessel,
                         row_data=row_data,
                     )
+                    summary["resolved_keep_both"] += 1
+                    summary["new_tags_created"] += 1
                     self._add_export_if_changed(
                         exports,
                         vessel,
@@ -228,7 +264,7 @@ class AppController:
         written = self._export_service.write_exports(exports) if exports else []
         self._refresh_filter_values()
         self.refresh_table()
-        self._notify_import_complete(written)
+        self._notify_import_complete(written, summary)
 
     def _count_initial_conflicts(self, rows: list[dict[str, str]]) -> int:
         total = 0
@@ -246,18 +282,36 @@ class AppController:
                 total += 1
         return total
 
-    def _notify_import_complete(self, written_paths: list[Path]) -> None:
-        if not written_paths:
-            messagebox.showinfo("Import Complete", "Import completed with no export updates.")
-            return
+    def _notify_import_complete(
+        self, written_paths: list[Path], summary: dict[str, int]
+    ) -> None:
+        export_rows = summary["resolved_use_existing"] + summary["resolved_keep_both"]
 
-        rendered_paths = "\n".join(str(path) for path in written_paths)
-        messagebox.showinfo(
-            "Import Complete",
-            "Import completed. Export files were generated:\n\n"
-            f"{rendered_paths}\n\n"
-            "Re-import these files into downstream systems as needed.",
+        export_section = "No export updates were needed."
+        if written_paths:
+            rendered_paths = "\n".join(str(path) for path in written_paths)
+            export_section = (
+                f"Export rows written: {export_rows}\n"
+                f"Export files:\n{rendered_paths}\n\n"
+                "Re-import these files into downstream systems as needed."
+            )
+
+        summary_text = (
+            "Import Summary\n\n"
+            f"Rows read: {summary['total_rows']}\n"
+            f"Rows skipped (missing Name/Description): {summary['rows_missing_required']}\n"
+            f"Unchanged matches: {summary['unchanged_matches']}\n"
+            f"Conflicts detected: {summary['conflicts_detected']}\n"
+            f"Conflicts skipped by user: {summary['skipped_by_user']}\n"
+            f"Resolved - Use Imported: {summary['resolved_use_imported']}\n"
+            f"Resolved - Use Existing: {summary['resolved_use_existing']}\n"
+            f"Resolved - Keep Both: {summary['resolved_keep_both']}\n"
+            f"New tags created: {summary['new_tags_created']}\n"
+            f"Existing tags updated: {summary['existing_tags_updated']}\n"
+            f"Merged into existing tags: {summary['merged_to_existing']}\n\n"
+            f"{export_section}"
         )
+        messagebox.showinfo("Import Complete", summary_text)
 
     @staticmethod
     def _add_export_if_changed(
