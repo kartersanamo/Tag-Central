@@ -6,12 +6,14 @@ from tkinter import filedialog, messagebox, simpledialog
 
 from app_config import DATABASE_FILE, EXPORT_FOLDER
 from models.tag_record import TagRecord
+from services.description_suggester import DescriptionSuggester
 from services.export_service import ExportService
 from services.spreadsheet_loader import SpreadsheetLoader
 from services.tag_repository import TagRepository
 from services.tag_sync_service import TagSyncService
 from ui.conflict_dialog import ConflictDialog
 from ui.main_window import MainWindow
+from ui.missing_description_dialog import MissingDescriptionDialog
 
 
 class AppController:
@@ -20,6 +22,7 @@ class AppController:
     def __init__(self, root: tk.Tk) -> None:
         self._repository = TagRepository(DATABASE_FILE)
         self._loader = SpreadsheetLoader()
+        self._suggester = DescriptionSuggester()
         self._export_service = ExportService(EXPORT_FOLDER)
         self._sync = TagSyncService()
         self._tags: dict[str, TagRecord] = self._repository.load()
@@ -139,7 +142,8 @@ class AppController:
         exports: dict[str, list[dict[str, object]]] = {}
         summary = {
             "total_rows": len(rows),
-            "rows_missing_required": 0,
+            "rows_missing_name": 0,
+            "rows_missing_description_filled": 0,
             "unchanged_matches": 0,
             "conflicts_detected": 0,
             "skipped_by_user": 0,
@@ -150,62 +154,86 @@ class AppController:
             "existing_tags_updated": 0,
             "merged_to_existing": 0,
         }
-        total_conflicts = self._count_initial_conflicts(rows)
-        resolved_conflicts = 0
-        conflict_dialog = ConflictDialog(self._window.root) if total_conflicts else None
 
-        try:
-            for row_data in rows:
-                imported_tag = row_data.get("Name", "").strip().upper()
-                imported_description = row_data.get("Description", "").strip().upper()
-                if not imported_tag or not imported_description:
-                    summary["rows_missing_required"] += 1
-                    continue
+        if not self._fill_missing_descriptions(rows, summary):
+            return
 
-                existing_same_tag = self._tags.get(imported_tag)
-                if (
-                    existing_same_tag is not None
-                    and existing_same_tag.description == imported_description
-                ):
-                    summary["unchanged_matches"] += 1
+        pending_conflicts: list[dict[str, object]] = []
 
-                conflict = self._sync.find_conflict(
+        for row_data in rows:
+            imported_tag = row_data.get("Name", "").strip().upper()
+            imported_description = row_data.get("Description", "").strip().upper()
+            if not imported_tag:
+                summary["rows_missing_name"] += 1
+                continue
+
+            existing_same_tag = self._tags.get(imported_tag)
+            if (
+                existing_same_tag is not None
+                and existing_same_tag.description == imported_description
+            ):
+                summary["unchanged_matches"] += 1
+
+            conflict = self._sync.find_conflict(
+                self._tags,
+                imported_tag=imported_tag,
+                imported_description=imported_description,
+            )
+
+            if conflict is None:
+                self._sync.add_or_update_imported(
                     self._tags,
-                    imported_tag=imported_tag,
-                    imported_description=imported_description,
-                )
-
-                if conflict is None:
-                    self._sync.add_or_update_imported(
-                        self._tags,
-                        tag_name=imported_tag,
-                        description=imported_description,
-                        vessel=vessel,
-                        row_data=row_data,
-                    )
-                    if existing_same_tag is None:
-                        summary["new_tags_created"] += 1
-                    else:
-                        summary["existing_tags_updated"] += 1
-                    continue
-
-                summary["conflicts_detected"] += 1
-                resolved_conflicts += 1
-                existing_tag, existing_record = conflict
-                if conflict_dialog is None:
-                    continue
-
-                resolution = conflict_dialog.resolve_conflict(
+                    tag_name=imported_tag,
+                    description=imported_description,
                     vessel=vessel,
-                    imported_tag=f"Tag: {imported_tag}",
-                    imported_description=f"Description: {imported_description}",
-                    existing_tag=f"Tag: {existing_tag}",
-                    existing_description=f"Description: {existing_record.description}",
-                    remaining_conflicts=total_conflicts - resolved_conflicts,
-                    total_conflicts=total_conflicts,
+                    row_data=row_data,
                 )
+                if existing_same_tag is None:
+                    summary["new_tags_created"] += 1
+                else:
+                    summary["existing_tags_updated"] += 1
+                continue
 
-                action = resolution.get("action", "skip")
+            summary["conflicts_detected"] += 1
+            existing_tag, existing_record = conflict
+            pending_conflicts.append(
+                {
+                    "imported_tag": imported_tag,
+                    "imported_description": imported_description,
+                    "existing_tag": existing_tag,
+                    "existing_description": existing_record.description,
+                    "row_data": row_data,
+                    "existing_same_tag": existing_same_tag,
+                }
+            )
+
+        if pending_conflicts:
+            conflict_dialog = ConflictDialog(self._window.root)
+            decisions = conflict_dialog.resolve_conflicts(
+                vessel=vessel,
+                conflicts=[
+                    {
+                        "action": "skip",
+                        "imported_tag": str(conflict["imported_tag"]),
+                        "imported_description": str(conflict["imported_description"]),
+                        "existing_tag": str(conflict["existing_tag"]),
+                        "existing_description": str(conflict["existing_description"]),
+                    }
+                    for conflict in pending_conflicts
+                ],
+            )
+            conflict_dialog.close()
+
+            if decisions is None:
+                return
+
+            for conflict, decision in zip(pending_conflicts, decisions):
+                imported_tag = str(conflict["imported_tag"])
+                imported_description = str(conflict["imported_description"])
+                existing_tag = str(conflict["existing_tag"])
+                row_data = dict(conflict["row_data"])
+                existing_same_tag = conflict["existing_same_tag"]
+                action = decision.get("action", "skip")
                 if action == "skip":
                     summary["skipped_by_user"] += 1
                     continue
@@ -216,7 +244,7 @@ class AppController:
                         tag_name=imported_tag,
                         description=imported_description,
                         vessel=vessel,
-                        row_data=row_data,
+                        row_data=row_data,  # type: ignore[arg-type]
                     )
                     summary["resolved_use_imported"] += 1
                     if existing_same_tag is None:
@@ -234,7 +262,7 @@ class AppController:
                         vessel,
                         imported_tag,
                         existing_tag,
-                        row_data,
+                        row_data,  # type: ignore[arg-type]
                     )
                     continue
 
@@ -245,7 +273,7 @@ class AppController:
                         tag_name=new_tag,
                         description=imported_description,
                         vessel=vessel,
-                        row_data=row_data,
+                        row_data=row_data,  # type: ignore[arg-type]
                     )
                     summary["resolved_keep_both"] += 1
                     summary["new_tags_created"] += 1
@@ -254,11 +282,8 @@ class AppController:
                         vessel,
                         imported_tag,
                         new_tag,
-                        row_data,
+                        row_data,  # type: ignore[arg-type]
                     )
-        finally:
-            if conflict_dialog is not None:
-                conflict_dialog.close()
 
         self._repository.save(self._tags)
         written = self._export_service.write_exports(exports) if exports else []
@@ -266,21 +291,35 @@ class AppController:
         self.refresh_table()
         self._notify_import_complete(written, summary)
 
-    def _count_initial_conflicts(self, rows: list[dict[str, str]]) -> int:
-        total = 0
-        for row_data in rows:
-            imported_tag = row_data.get("Name", "").strip().upper()
-            imported_description = row_data.get("Description", "").strip().upper()
-            if not imported_tag or not imported_description:
+    def _fill_missing_descriptions(
+        self, rows: list[dict[str, str]], summary: dict[str, int]
+    ) -> bool:
+        candidates: list[dict[str, object]] = []
+        for index, row_data in enumerate(rows):
+            tag_name = row_data.get("Name", "").strip().upper()
+            description = row_data.get("Description", "").strip().upper()
+            if tag_name and not description:
+                candidates.append(
+                    {
+                        "row_index": index,
+                        "tag": tag_name,
+                        "suggested": self._suggester.suggest(tag_name),
+                    }
+                )
+
+        if not candidates:
+            return True
+
+        edited = MissingDescriptionDialog(self._window.root, candidates).show()
+        if edited is None:
+            return False
+
+        for row_index, description in edited.items():
+            if not description:
                 continue
-            conflict = self._sync.find_conflict(
-                self._tags,
-                imported_tag=imported_tag,
-                imported_description=imported_description,
-            )
-            if conflict is not None:
-                total += 1
-        return total
+            rows[row_index]["Description"] = description
+            summary["rows_missing_description_filled"] += 1
+        return True
 
     def _notify_import_complete(
         self, written_paths: list[Path], summary: dict[str, int]
@@ -299,7 +338,8 @@ class AppController:
         summary_text = (
             "Import Summary\n\n"
             f"Rows read: {summary['total_rows']}\n"
-            f"Rows skipped (missing Name/Description): {summary['rows_missing_required']}\n"
+            f"Rows skipped (missing Name): {summary['rows_missing_name']}\n"
+            f"Rows missing description filled: {summary['rows_missing_description_filled']}\n"
             f"Unchanged matches: {summary['unchanged_matches']}\n"
             f"Conflicts detected: {summary['conflicts_detected']}\n"
             f"Conflicts skipped by user: {summary['skipped_by_user']}\n"
@@ -357,4 +397,18 @@ class AppController:
         written = self._export_service.write_exports(exports)
         self._refresh_filter_values()
         self.refresh_table()
-        self._notify_import_complete(written)
+        rename_summary = {
+            "total_rows": 0,
+            "rows_missing_name": 0,
+            "rows_missing_description_filled": 0,
+            "unchanged_matches": 0,
+            "conflicts_detected": 0,
+            "skipped_by_user": 0,
+            "resolved_use_imported": 0,
+            "resolved_use_existing": 0,
+            "resolved_keep_both": 0,
+            "new_tags_created": 0,
+            "existing_tags_updated": 0,
+            "merged_to_existing": 0,
+        }
+        self._notify_import_complete(written, rename_summary)
