@@ -143,12 +143,13 @@ class AppController:
             f"Updated {changed_count} tag(s). Changes were autosaved and batched for export.",
         )
 
-    def clear_inline_find_replace(self) -> None:
+    def clear_inline_find_replace(self, refresh: bool = True) -> None:
         """Clears inline find/replace inputs."""
         self._window.find_text_var.set("")
         self._window.replace_text_var.set("")
         self._window.find_scope_var.set("both")
-        self.refresh_table()
+        if refresh:
+            self.refresh_table()
 
     def _apply_find_replace(self, find_text: str, replace_text: str, scope: str) -> int:
         """Applies text replacement and returns number of changed tags."""
@@ -311,7 +312,14 @@ class AppController:
     @staticmethod
     def _extract_address(row_data: dict[str, str]) -> str:
         """Gets address from row data using common key variants."""
-        for key in ("Address", "ADDRESS", "address"):
+        for key in (
+            "Address",
+            "ADDRESS",
+            "address",
+            "IOAddress",
+            "IOADDRESS",
+            "ioaddress",
+        ):
             if key in row_data and str(row_data[key]).strip():
                 return str(row_data[key]).strip().upper()
         return ""
@@ -681,6 +689,7 @@ class AppController:
 
         self._persist_tags()
         self._refresh_filter_values()
+        self.clear_inline_find_replace(refresh=False)
         self.refresh_table()
         self._notify_import_complete(summary)
 
