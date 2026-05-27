@@ -624,13 +624,17 @@ class AppController:
             self._window.root.destroy()
             return
 
-        should_export = messagebox.askyesno(
+        close_choice = messagebox.askyesnocancel(
             "Pending Changes",
             "There are pending batched changes.\n\n"
             "Select Yes to export changes now.\n"
-            "Select No to abort all pending changes.",
+            "Select No to abort all pending changes.\n"
+            "Select Cancel to go back to the application.",
         )
-        if should_export:
+        if close_choice is None:
+            return
+
+        if close_choice:
             self.export_pending_changes()
             self._window.root.destroy()
             return
