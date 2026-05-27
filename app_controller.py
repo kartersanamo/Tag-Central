@@ -12,6 +12,7 @@ from app_config import (
     SYNC_STATUS_LABELS,
 )
 from models.tag_record import (
+    SYNC_NAME_MISMATCH,
     SYNC_NEEDS_ALIGN,
     SYNC_PROFICY_DRIFT,
     SYNC_PROFICY_ONLY,
@@ -150,8 +151,11 @@ class AppController:
         self._window.context_menu.entryconfigure(
             1, command=self.align_selected_to_cimplicity
         )
-        self._window.context_menu.entryconfigure(3, command=self.add_new_tag)
-        self._window.context_menu.entryconfigure(5, command=self.delete_selected_tags)
+        self._window.context_menu.entryconfigure(
+            2, command=self.increment_selected_descriptions
+        )
+        self._window.context_menu.entryconfigure(4, command=self.add_new_tag)
+        self._window.context_menu.entryconfigure(6, command=self.delete_selected_tags)
         self._refresh_tree_heading_sort_markers()
 
     def _on_tree_heading_click(self, column_name: str) -> None:
@@ -208,7 +212,8 @@ class AppController:
         if clicked_item not in current_selection:
             self._window.tree.selection_set(clicked_item)
 
-        selected_count = len(self._window.tree.selection())
+        selection = list(self._window.tree.selection())
+        selected_count = len(selection)
         if selected_count <= 1:
             align_label = "Align to Cimplicity"
             delete_label = "Delete Tag"
@@ -216,8 +221,140 @@ class AppController:
             align_label = f"Align {selected_count} tags to Cimplicity"
             delete_label = f"Delete {selected_count} tags"
         self._window.context_menu.entryconfigure(1, label=align_label)
-        self._window.context_menu.entryconfigure(5, label=delete_label)
+        self._window.context_menu.entryconfigure(6, label=delete_label)
+
+        can_increment = self._can_increment_descriptions(selection)
+        if can_increment:
+            increment_label = (
+                f"Increment descriptions ({selected_count})"
+                if selected_count > 1
+                else "Increment descriptions"
+            )
+            increment_state = "normal"
+        else:
+            increment_label = "Increment descriptions"
+            increment_state = "disabled"
+        self._window.context_menu.entryconfigure(
+            2, label=increment_label, state=increment_state
+        )
         self._window.context_menu.post(event.x_root, event.y_root)
+
+    @staticmethod
+    def _description_increment_base(description: str) -> str:
+        """Strips a trailing numeric suffix before re-numbering descriptions."""
+        trimmed = description.strip().upper()
+        return re.sub(r" \d+$", "", trimmed)
+
+    def _can_increment_descriptions(self, tag_names: list[str]) -> bool:
+        """True when mismatch view is on and all selected tags share one group."""
+        if not self._window.view_conflicts_var.get():
+            return False
+        if len(tag_names) < 2:
+            return False
+
+        group_ids: set[int] = set()
+        for tag_name in tag_names:
+            group_id = self._tag_conflict_group.get(tag_name)
+            if group_id is None:
+                return False
+            group_ids.add(group_id)
+        return len(group_ids) == 1
+
+    def increment_selected_descriptions(self) -> None:
+        """Assigns '{base} 1', '{base} 2', ... to tags in one internal mismatch group."""
+        assert self._window.tree
+        selection = list(self._window.tree.selection())
+        if not self._can_increment_descriptions(selection):
+            messagebox.showinfo(
+                "Increment Descriptions",
+                "Select two or more tags from the same group while "
+                "View Internal Mismatches is enabled.",
+            )
+            return
+
+        sorted_tags = sorted(selection)
+        first_record = self._tags[sorted_tags[0]]
+        base_description = self._description_increment_base(first_record.description)
+        if not base_description:
+            messagebox.showwarning(
+                "Increment Descriptions", "Cannot increment empty descriptions."
+            )
+            return
+
+        preview_lines = [
+            f"{tag_name}: {base_description} {index}"
+            for index, tag_name in enumerate(sorted_tags, start=1)
+        ]
+        confirmed = messagebox.askyesno(
+            "Increment Descriptions",
+            "Apply numbered descriptions to the selected tags?\n\n"
+            + "\n".join(preview_lines[:12])
+            + ("\n..." if len(preview_lines) > 12 else "")
+            + "\n\nChanges will be autosaved and batched for Proficy export.",
+        )
+        if not confirmed:
+            return
+
+        updated_count = 0
+        for index, tag_name in enumerate(sorted_tags, start=1):
+            record = self._tags.get(tag_name)
+            if record is None:
+                continue
+
+            old_description = record.description
+            old_sync_status = record.sync_status
+            old_cimplicity_pt_id = record.cimplicity_pt_id
+            new_description = f"{base_description} {index}"
+            if old_description == new_description:
+                continue
+
+            record.description = new_description
+            if record.proficy_row_data:
+                record.proficy_row_data["Description"] = new_description
+
+            if record.cimplicity_pt_id:
+                cim_desc = normalize_description(
+                    record.cimplicity_row_data.get("DESC", record.description)
+                )
+                if record.description != cim_desc:
+                    record.sync_status = SYNC_PROFICY_DRIFT
+                elif (record.proficy_name or tag_name) != record.cimplicity_pt_id:
+                    record.sync_status = SYNC_NAME_MISMATCH
+                else:
+                    record.sync_status = SYNC_SYNCED
+
+            target_vessels = record.vessels or {"GLOBAL"}
+            export_row = record.proficy_export_row()
+            for vessel in target_vessels:
+                self._queue_change(vessel=vessel, row_data=export_row)
+
+            if old_sync_status == SYNC_SYNCED and old_cimplicity_pt_id:
+                task_vessel = next(iter(target_vessels))
+                self._manual_tasks.add_task(
+                    vessel=task_vessel,
+                    tag_name=old_cimplicity_pt_id,
+                    field="description",
+                    old_value=old_description,
+                    new_value=new_description,
+                    reason="Numbered descriptions for internal mismatch resolution",
+                )
+            updated_count += 1
+
+        if updated_count == 0:
+            messagebox.showinfo("Increment Descriptions", "No descriptions were changed.")
+            return
+
+        self._persist_tags()
+        self._recalculate_conflicted_tags()
+        self._view_conflict_session_tags.update(self._conflicted_tags)
+        self._update_manual_tasks_indicator()
+        self._refresh_filter_values()
+        self.refresh_table()
+        messagebox.showinfo(
+            "Increment Descriptions",
+            f"Updated {updated_count} tag description(s). "
+            "Changes were autosaved and batched for export.",
+        )
 
     def _persist_tags(self) -> None:
         """Persists current in-memory table to tags.csv."""
@@ -697,10 +834,12 @@ class AppController:
         self._update_review_queue_indicator()
 
     def _on_view_conflicts_toggle(self) -> None:
-        """Tracks conflict-view session behavior for inline resolution workflows."""
+        """Tracks internal-mismatch view session behavior for inline resolution."""
         if self._window.view_conflicts_var.get():
             self._recalculate_conflicted_tags()
             self._view_conflict_session_tags = set(self._conflicted_tags)
+            self._sort_column = "conflict_group"
+            self._sort_descending = False
         else:
             self._view_conflict_session_tags.clear()
         self.refresh_table()
@@ -759,6 +898,10 @@ class AppController:
             if query and query not in searchable:
                 continue
             rows_to_show.append((tag_name, record))
+
+        if view_conflicts_only:
+            self._sort_column = "conflict_group"
+            self._sort_descending = False
 
         self._sort_rows(rows_to_show)
 
@@ -822,7 +965,7 @@ class AppController:
         visible_count = len(rows_to_show)
         if view_conflicts_only:
             self._window.status_var.set(
-                f"{visible_count} conflict tags in {len(visible_groups)} groups"
+                f"{visible_count} internal mismatch tags in {len(visible_groups)} groups"
             )
         else:
             self._window.status_var.set(f"{visible_count} tags")

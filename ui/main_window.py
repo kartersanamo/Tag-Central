@@ -165,7 +165,7 @@ class MainWindow:
         )
         self.view_conflicts_check = ttk.Checkbutton(
             filter_bar,
-            text="View Conflicts (0)",
+            text="View Internal Mismatches (0)",
             variable=self.view_conflicts_var,
         )
         self.view_conflicts_check.pack(side="left", padx=(12, 0))
@@ -209,6 +209,7 @@ class MainWindow:
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Edit Tag")
         self.context_menu.add_command(label="Align to Cimplicity")
+        self.context_menu.add_command(label="Increment descriptions", state="disabled")
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Add Tag")
         self.context_menu.add_separator()
@@ -230,9 +231,11 @@ class MainWindow:
             )
 
     def set_conflict_count(self, count: int) -> None:
-        """Updates the View Conflicts checkbox label with the current count."""
+        """Updates the View Internal Mismatches checkbox label with the current count."""
         if self.view_conflicts_check is not None:
-            self.view_conflicts_check.configure(text=f"View Conflicts ({count})")
+            self.view_conflicts_check.configure(
+                text=f"View Internal Mismatches ({count})"
+            )
 
     def set_pending_change_count(self, count: int) -> None:
         """Updates export button text/style based on pending changes."""
