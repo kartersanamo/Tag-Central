@@ -4,3 +4,4 @@ __pycache__/
 *.csv
 exports/*
 backups/*
+cimplicity_review_queue.json

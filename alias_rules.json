@@ -1,0 +1,6 @@
+{
+  "prefix_pairs": [
+    {"from": "ALM_", "to": "ALARM_"},
+    {"from": "ALARM_", "to": "ALM_"}
+  ]
+}

@@ -12,7 +12,7 @@ class TestFindReplaceHelpers(unittest.TestCase):
             tag_name=tag,
             description=description,
             vessels={"C-LEGACY"},
-            row_data={"Name": tag, "Description": description},
+            proficy_row_data={"Name": tag, "Description": description},
         )
 
     def test_matches_find_scope_tag_only(self) -> None:
@@ -26,7 +26,7 @@ class TestFindReplaceHelpers(unittest.TestCase):
 
     def test_highlight_find_text_wraps_matches(self) -> None:
         highlighted = AppController._highlight_find_text("AFT_DRAFT", "draft")
-        self.assertEqual(highlighted, "AFT_⟦DRAFT⟧")
+        self.assertEqual(highlighted, "AFT_[DRAFT]")
 
     def test_format_find_replace_display_respects_scope(self) -> None:
         tag, description = AppController._format_find_replace_display(
@@ -36,5 +36,5 @@ class TestFindReplaceHelpers(unittest.TestCase):
             "tag",
             highlight=True,
         )
-        self.assertIn("⟦DRAFT⟧", tag)
+        self.assertIn("[DRAFT]", tag)
         self.assertEqual(description, "AFT DRAFT")

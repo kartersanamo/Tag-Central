@@ -37,15 +37,18 @@ class TagSyncService:
             record = tags[tag_name]
             record.description = description
             record.vessels.add(vessel)
-            record.row_data = row_data
+            record.set_proficy_snapshot(row_data, vessel)
             return
 
-        tags[tag_name] = TagRecord(
+        record = TagRecord(
             tag_name=tag_name,
             description=description,
             vessels={vessel},
-            row_data=row_data,
+            proficy_row_data=dict(row_data),
+            proficy_name=tag_name,
         )
+        record.set_proficy_snapshot(row_data, vessel)
+        tags[tag_name] = record
 
     def add_vessel_to_existing(
         self, tags: dict[str, TagRecord], tag_name: str, vessel: str

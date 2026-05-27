@@ -4,19 +4,42 @@ import tkinter as tk
 import re
 from tkinter import filedialog, messagebox, simpledialog
 
-from app_config import BACKUP_FOLDER, CONFLICT_GROUP_COLORS, DATABASE_FILE, EXPORT_FOLDER
-from models.tag_record import TagRecord
+from app_config import (
+    BACKUP_FOLDER,
+    CONFLICT_GROUP_COLORS,
+    DATABASE_FILE,
+    EXPORT_FOLDER,
+    SYNC_STATUS_LABELS,
+)
+from models.tag_record import (
+    SYNC_NEEDS_ALIGN,
+    SYNC_PROFICY_DRIFT,
+    SYNC_PROFICY_ONLY,
+    SYNC_SYNCED,
+    TagRecord,
+)
 from services.backup_service import BackupService
+from services.cimplicity_change_report import CimplicityChangeReport
+from services.cimplicity_loader import CimplicityLoader
+from services.cross_program_sync_service import (
+    CimplicityImportRow,
+    CimplicitySyncAction,
+    CrossProgramSyncService,
+    normalize_description,
+)
 from services.description_suggester import DescriptionSuggester
 from services.export_service import ExportService
 from services.spreadsheet_loader import SpreadsheetLoader
 from services.tag_repository import TagRepository
 from services.tag_sync_service import TagSyncService
 from ui.backups_dialog import BackupsDialog
+from ui.cimplicity_review_dialog import CimplicityReviewDialog
+from ui.cimplicity_sync_dialog import CimplicitySyncDialog
 from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
 from ui.main_window import MainWindow
 from ui.missing_description_dialog import MissingDescriptionDialog
+from ui.sync_dashboard_dialog import SyncDashboardDialog
 
 
 class AppController:
@@ -25,10 +48,14 @@ class AppController:
     def __init__(self, root: tk.Tk) -> None:
         self._repository = TagRepository(DATABASE_FILE)
         self._loader = SpreadsheetLoader()
+        self._cimplicity_loader = CimplicityLoader()
         self._suggester = DescriptionSuggester()
         self._export_service = ExportService(EXPORT_FOLDER)
         self._backup_service = BackupService(BACKUP_FOLDER, DATABASE_FILE)
         self._sync = TagSyncService()
+        self._cross_program = CrossProgramSyncService()
+        self._cimplicity_report = CimplicityChangeReport()
+        self._cimplicity_manual_entries: list[dict[str, str]] = []
         self._tags: dict[str, TagRecord] = self._repository.load()
         self._active_vessel_filter: str | None = None
         self._conflicted_tags: set[str] = set()
@@ -42,10 +69,14 @@ class AppController:
         self._refresh_filter_values()
         self._recalculate_conflicted_tags()
         self._window.set_pending_change_count(0)
+        self._update_review_queue_indicator()
         self._window.root.protocol("WM_DELETE_WINDOW", self._handle_app_close)
         self.refresh_table()
 
     def _bind_events(self) -> None:
+        assert self._window.import_proficy_button and self._window.import_cimplicity_button
+        assert self._window.sync_dashboard_button and self._window.cimplicity_review_button
+        assert self._window.program_filter_combo
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
         assert self._window.find_replace_button
@@ -55,7 +86,11 @@ class AppController:
         assert self._window.change_tag_button and self._window.vessel_combo
         assert self._window.tree and self._window.context_menu
 
-        self._window.import_button.configure(command=self.import_spreadsheet)
+        self._window.import_proficy_button.configure(command=self.import_proficy_spreadsheet)
+        self._window.import_cimplicity_button.configure(command=self.import_cimplicity_spreadsheet)
+        self._window.sync_dashboard_button.configure(command=self.open_sync_dashboard)
+        self._window.cimplicity_review_button.configure(command=self.open_cimplicity_review)
+        self._window.import_button.configure(command=self.import_proficy_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
         self._window.find_replace_button.configure(command=lambda: None)
@@ -74,6 +109,9 @@ class AppController:
             "write", lambda *_: self._on_view_conflicts_toggle()
         )
         self._window.vessel_combo.bind("<<ComboboxSelected>>", self.apply_vessel_filter)
+        self._window.program_filter_combo.bind(
+            "<<ComboboxSelected>>", lambda *_: self.refresh_table()
+        )
         self._window.tree.bind("<Button-3>", self._show_context_menu)
         self._window.context_menu.entryconfigure(
             0, command=self.edit_selected_tag
@@ -416,6 +454,107 @@ class AppController:
         self._active_vessel_filter = None
         self.refresh_table()
 
+    def _update_review_queue_indicator(self) -> None:
+        self._window.set_review_queue_count(self._cross_program.review_queue.count())
+
+    @staticmethod
+    def _sync_status_label(status: str) -> str:
+        return SYNC_STATUS_LABELS.get(status, status.replace("_", " ").title())
+
+    def _passes_program_filter(self, record: TagRecord) -> bool:
+        program_filter = self._window.program_filter_var.get().strip()
+        if program_filter in {"", "ALL"}:
+            return True
+        if program_filter == "Proficy only":
+            return bool(record.proficy_row_data) and not record.cimplicity_pt_id
+        if program_filter == "Cimplicity only":
+            return bool(record.cimplicity_pt_id or record.cimplicity_row_data)
+        if program_filter == "Needs sync":
+            return record.sync_status in {
+                SYNC_PROFICY_DRIFT,
+                SYNC_NEEDS_ALIGN,
+                "name_mismatch",
+            }
+        return True
+
+    def _record_address(self, record: TagRecord) -> str:
+        if record.linked_address:
+            return record.linked_address
+        return self._extract_address(record.proficy_row_data)
+
+    def open_sync_dashboard(self) -> None:
+        SyncDashboardDialog(
+            self._window.root,
+            tags=self._tags,
+            review_queue_count=self._cross_program.review_queue.count(),
+            on_align_selected=self._align_tags_from_dashboard,
+        )
+
+    def _align_tags_from_dashboard(self, tag_names: list[str]) -> None:
+        for tag_name in tag_names:
+            record = self._tags.get(tag_name)
+            if record is None or not record.cimplicity_row_data:
+                continue
+            row = CimplicityImportRow(
+                pt_id=record.cimplicity_pt_id or tag_name,
+                description=normalize_description(record.cimplicity_row_data.get("DESC", "")),
+                address=record.linked_address,
+                row_data=dict(record.cimplicity_row_data),
+                row_index=0,
+            )
+            export_row = self._cross_program.align_proficy_to_cimplicity(
+                self._tags, tag_name, row, next(iter(record.vessels), "GLOBAL")
+            )
+            if export_row:
+                for vessel in record.vessels or {"GLOBAL"}:
+                    self._queue_change(vessel=vessel, row_data=export_row)
+        self._persist_tags()
+        self._update_pending_change_indicator()
+        self.refresh_table()
+        messagebox.showinfo("Aligned", f"Aligned {len(tag_names)} tag(s) to Cimplicity.")
+
+    def open_cimplicity_review(self) -> None:
+        CimplicityReviewDialog(
+            self._window.root,
+            review_queue=self._cross_program.review_queue,
+            on_create_proficy=self._create_proficy_from_review_item,
+            on_dismiss=self._dismiss_review_item,
+        )
+
+    def _create_proficy_from_review_item(self, item) -> None:
+        from services.cimplicity_review_queue import ReviewQueueItem
+
+        assert isinstance(item, ReviewQueueItem)
+        row_data = {
+            "Name": item.pt_id,
+            "Description": item.description,
+            "IOAddress": item.address,
+            "Address": item.address,
+        }
+        self._cross_program.import_proficy_row(
+            self._tags,
+            tag_name=item.pt_id,
+            description=item.description,
+            vessel=item.vessel,
+            row_data=row_data,
+        )
+        record = self._tags[item.pt_id]
+        record.set_cimplicity_snapshot(item.row_data, item.vessel, "manual")
+        record.cimplicity_pt_id = item.pt_id
+        record.sync_status = SYNC_SYNCED
+        self._cross_program.review_queue.remove(item.vessel, item.pt_id)
+        self._persist_tags()
+        self._update_review_queue_indicator()
+        self._refresh_filter_values()
+        self.refresh_table()
+
+    def _dismiss_review_item(self, item) -> None:
+        from services.cimplicity_review_queue import ReviewQueueItem
+
+        assert isinstance(item, ReviewQueueItem)
+        self._cross_program.review_queue.remove(item.vessel, item.pt_id)
+        self._update_review_queue_indicator()
+
     def _on_view_conflicts_toggle(self) -> None:
         """Tracks conflict-view session behavior for inline resolution workflows."""
         if self._window.view_conflicts_var.get():
@@ -456,6 +595,8 @@ class AppController:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
+            if not self._passes_program_filter(record):
+                continue
             if find_text and not self._matches_find_scope(record, find_text, find_scope):
                 continue
 
@@ -467,10 +608,11 @@ class AppController:
                 row_description = record.description
 
             vessels_text = ", ".join(sorted(record.vessels))
-            address_text = self._extract_address(record.row_data)
+            address_text = self._record_address(record)
             peers_text = ", ".join(self._tag_conflict_peers.get(tag_name, []))
             searchable = (
-                f"{row_tag} {row_description} {address_text} {vessels_text} {peers_text}"
+                f"{row_tag} {row_description} {record.proficy_name} "
+                f"{record.cimplicity_pt_id} {address_text} {vessels_text} {peers_text}"
             ).lower()
             if query and query not in searchable:
                 continue
@@ -518,13 +660,18 @@ class AppController:
             group_label = f"G{group_id}" if group_id is not None else ""
             conflicts_with = ", ".join(peers)
             vessels_text = ", ".join(sorted(record.vessels))
-            address_text = self._extract_address(record.row_data)
+            address_text = self._record_address(record)
+            proficy_name = record.proficy_name or ""
+            cimplicity_pt = record.cimplicity_pt_id or ""
+            sync_label = self._sync_status_label(record.sync_status)
 
             row_tags: list[str] = []
             if group_id is not None:
                 color_index = (group_id - 1) % len(CONFLICT_GROUP_COLORS)
                 row_tags.append(f"conflict_g{color_index}")
                 visible_groups.add(group_id)
+            elif record.sync_status in {SYNC_PROFICY_DRIFT, SYNC_NEEDS_ALIGN, "name_mismatch"}:
+                row_tags.append("sync_drift")
             elif find_text:
                 row_tags.append("find_match")
 
@@ -535,8 +682,11 @@ class AppController:
                 values=(
                     row_number,
                     display_tag,
+                    proficy_name,
+                    cimplicity_pt,
                     display_description,
                     address_text,
+                    sync_label,
                     group_label,
                     conflicts_with,
                     vessels_text,
@@ -591,9 +741,9 @@ class AppController:
         }
         self._window.set_conflict_count(len(self._conflicted_tags))
 
-    def import_spreadsheet(self) -> None:
+    def import_proficy_spreadsheet(self) -> None:
         file_path = filedialog.askopenfilename(
-            title="Select Spreadsheet",
+            title="Select Proficy Spreadsheet",
             filetypes=[
                 ("Spreadsheet Files", "*.xlsx *.xls *.csv"),
                 ("CSV Files", "*.csv"),
@@ -661,20 +811,20 @@ class AppController:
             )
 
             if conflict is None:
-                self._sync.add_or_update_imported(
+                was_new = imported_tag not in self._tags
+                self._cross_program.import_proficy_row(
                     self._tags,
                     tag_name=imported_tag,
                     description=imported_description,
                     vessel=vessel,
                     row_data=row_data,
                 )
-                if existing_same_tag is None:
+                if was_new:
                     summary["new_tags_created"] += 1
                 else:
                     summary["existing_tags_updated"] += 1
-                updated_row = dict(row_data)
-                updated_row["Name"] = imported_tag
-                updated_row["Description"] = imported_description
+                record = self._tags[imported_tag]
+                updated_row = record.proficy_export_row()
                 self._queue_change_if_different(
                     vessel=vessel,
                     original_row=original_rows[row_index],
@@ -796,6 +946,184 @@ class AppController:
         self.refresh_table()
         self._notify_import_complete(summary)
 
+    def import_cimplicity_spreadsheet(self) -> None:
+        """Imports a Cimplicity Shared Name File and aligns Proficy where needed."""
+        file_path = filedialog.askopenfilename(
+            title="Select Cimplicity Shared Name File",
+            filetypes=[("CSV Files", "*.csv")],
+        )
+        if not file_path:
+            return
+
+        vessel = simpledialog.askstring("Vessel Name", "Enter vessel name:")
+        if not vessel:
+            return
+        vessel = vessel.strip().upper()
+        if not vessel:
+            messagebox.showwarning("Invalid Vessel", "Vessel name cannot be empty.")
+            return
+
+        try:
+            raw_rows = self._cimplicity_loader.load_rows(file_path)
+        except Exception as error:
+            messagebox.showerror("Cimplicity Import Error", str(error))
+            return
+
+        prepared = self._cross_program.prepare_cimplicity_rows(raw_rows)
+        analysis = self._cross_program.analyze_cimplicity_import(
+            self._tags, prepared, vessel
+        )
+
+        summary = {
+            "total_rows": len(prepared),
+            "linked_synced": analysis.linked_synced,
+            "auto_aligned": 0,
+            "review_queue_added": analysis.review_queue_added,
+            "actionable": len(analysis.actionable),
+            "skipped": 0,
+            "proficy_exports_queued": 0,
+            "manual_cimplicity_flags": 0,
+        }
+
+        dialog_rows: list[dict[str, str]] = []
+        for action in analysis.actionable:
+            dialog_rows.append(
+                {
+                    "action": action.default_action,
+                    "pt_id": action.pt_id,
+                    "cimplicity_description": action.cimplicity_description,
+                    "address": action.address,
+                    "existing_tag": action.existing_tag,
+                    "existing_description": action.existing_description,
+                    "issue": action.issue,
+                    "row_index": str(action.row_index),
+                    "row_data": dict(action.row_data),
+                }
+            )
+
+        decisions: list[dict[str, str]] = []
+        if dialog_rows:
+            sync_dialog = CimplicitySyncDialog(self._window.root)
+            result = sync_dialog.resolve_rows(vessel=vessel, rows=dialog_rows)
+            sync_dialog.close()
+            if result is None:
+                return
+            decisions = result
+
+        row_by_index = {row.row_index: row for row in prepared}
+        row_by_pt_id = {row.pt_id: row for row in prepared}
+        for decision in decisions:
+            row_index = int(decision.get("row_index", -1))
+            row = row_by_index.get(row_index) or row_by_pt_id.get(
+                str(decision.get("pt_id", "")).strip().upper()
+            )
+            if row is None:
+                continue
+            action = decision.get("action", "skip")
+            if action == "skip":
+                summary["skipped"] += 1
+                continue
+
+            canonical_tag = decision.get("existing_tag", "")
+            changed, export_row = self._cross_program.apply_cimplicity_row(
+                self._tags,
+                row,
+                vessel,
+                action,
+                canonical_tag=canonical_tag or None,
+            )
+            if action == "flag_manual_cimplicity":
+                summary["manual_cimplicity_flags"] += 1
+                self._cimplicity_manual_entries.append(
+                    {
+                        "PT_ID": row.pt_id,
+                        "field": "manual_review",
+                        "current": row.description,
+                        "recommended": row.description,
+                        "reason": decision.get("issue", "flagged"),
+                    }
+                )
+                continue
+
+            if action == "align_proficy" and changed:
+                summary["auto_aligned"] += 1
+                if export_row:
+                    self._queue_change(vessel=vessel, row_data=export_row)
+                    summary["proficy_exports_queued"] += 1
+            elif action == "link_only" and changed:
+                summary["linked_synced"] += 1
+
+        for row in prepared:
+            if any(int(d.get("row_index", -1)) == row.row_index for d in decisions):
+                continue
+            link = self._cross_program._linker.link_cimplicity_row(
+                self._tags, row.pt_id, row.address
+            )
+            if link.canonical_tag and not self._cross_program._detect_issues(
+                self._tags[link.canonical_tag], row
+            ):
+                self._cross_program.apply_cimplicity_row(
+                    self._tags, row, vessel, "link_only", canonical_tag=link.canonical_tag
+                )
+                summary["linked_synced"] += 1
+
+        from datetime import datetime, timezone
+
+        from services.cimplicity_review_queue import ReviewQueueItem
+
+        for row in prepared:
+            link = self._cross_program._linker.link_cimplicity_row(
+                self._tags, row.pt_id, row.address
+            )
+            if link.canonical_tag or link.ambiguous_tags:
+                continue
+            self._cross_program.review_queue.add(
+                ReviewQueueItem(
+                    vessel=vessel,
+                    pt_id=row.pt_id,
+                    description=row.description,
+                    address=row.address,
+                    row_data=row.row_data,
+                    imported_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+
+        self._persist_tags()
+        self._refresh_filter_values()
+        self._update_review_queue_indicator()
+        self.clear_inline_find_replace(refresh=False)
+        self.refresh_table()
+        self._notify_cimplicity_import_complete(summary)
+
+    def import_spreadsheet(self) -> None:
+        """Backward-compatible alias for Proficy import."""
+        self.import_proficy_spreadsheet()
+
+    def _notify_cimplicity_import_complete(self, summary: dict[str, int]) -> None:
+        messagebox.showinfo(
+            "Cimplicity Import Complete",
+            "Cimplicity Import Summary\n\n"
+            f"Rows read: {summary['total_rows']}\n"
+            f"Already synced (no action): {summary['linked_synced']}\n"
+            f"Aligned Proficy to Cimplicity: {summary['auto_aligned']}\n"
+            f"Sent to review queue: {summary['review_queue_added']}\n"
+            f"Rows needing decisions: {summary['actionable']}\n"
+            f"Skipped: {summary['skipped']}\n"
+            f"Proficy exports queued: {summary['proficy_exports_queued']}\n"
+            f"Manual Cimplicity flags: {summary['manual_cimplicity_flags']}\n\n"
+            "Proficy batch files are generated via Export Changes.",
+        )
+        if self._cimplicity_manual_entries:
+            path = self._cimplicity_report.write_report(
+                "GLOBAL", self._cimplicity_manual_entries
+            )
+            if path:
+                messagebox.showinfo(
+                    "Cimplicity Manual Report",
+                    f"Manual Cimplicity work list written to:\n{path}",
+                )
+                self._cimplicity_manual_entries.clear()
+
     def _fill_missing_descriptions(
         self, rows: list[dict[str, str]], summary: dict[str, int]
     ) -> bool:
@@ -907,13 +1235,20 @@ class AppController:
             or old_address != new_address
             or old_vessels != new_vessels
         )
-        record.row_data["Address"] = new_address
+        record.proficy_row_data["Address"] = new_address
+        record.proficy_row_data["IOAddress"] = new_address
+        record.proficy_name = new_tag
+        record.linked_address = new_address
+        if record.cimplicity_pt_id:
+            if record.description != normalize_description(
+                record.cimplicity_row_data.get("DESC", record.description)
+            ):
+                record.sync_status = SYNC_PROFICY_DRIFT
+            else:
+                record.sync_status = SYNC_SYNCED
         if has_changed:
             target_vessels = new_vessels or old_vessels or {"GLOBAL"}
-            updated_row = dict(old_row_data)
-            updated_row["Name"] = new_tag
-            updated_row["Description"] = new_description
-            updated_row["Address"] = new_address
+            updated_row = record.proficy_export_row()
             for vessel in target_vessels:
                 self._queue_change(
                     vessel=vessel,

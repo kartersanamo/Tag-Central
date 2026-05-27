@@ -16,7 +16,7 @@ class TestTagSyncService(unittest.TestCase):
                 tag_name="T100",
                 description="PUMP SUCTION",
                 vessels={"V1"},
-                row_data={"Name": "T100", "Description": "PUMP SUCTION"},
+                proficy_row_data={"Name": "T100", "Description": "PUMP SUCTION"},
             )
         }
 

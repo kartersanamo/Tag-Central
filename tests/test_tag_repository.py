@@ -25,7 +25,9 @@ class TestTagRepository(unittest.TestCase):
                 tag_name="A100",
                 description="MAIN PUMP",
                 vessels={"V2", "V1"},
-                row_data={"Name": "A100", "Description": "MAIN PUMP"},
+                proficy_row_data={"Name": "A100", "Description": "MAIN PUMP"},
+                proficy_name="A100",
+                sync_status="proficy_only",
             )
         }
 
@@ -36,8 +38,41 @@ class TestTagRepository(unittest.TestCase):
         self.assertEqual(loaded["A100"].description, "MAIN PUMP")
         self.assertEqual(loaded["A100"].vessels, {"V1", "V2"})
         self.assertEqual(
-            loaded["A100"].row_data, {"Name": "A100", "Description": "MAIN PUMP"}
+            loaded["A100"].proficy_row_data,
+            {"Name": "A100", "Description": "MAIN PUMP"},
         )
+
+    def test_legacy_row_data_column_loads(self) -> None:
+        legacy_csv = (
+            "tag_name,description,vessels,row_data\n"
+            'LEGACY1,LEGACY DESC,V1,"{""Name"": ""LEGACY1"", ""IOAddress"": ""%R00001""}"\n'
+        )
+        self.database_path.write_text(legacy_csv, encoding="utf-8")
+        loaded = self.repository.load()
+        self.assertIn("LEGACY1", loaded)
+        self.assertEqual(loaded["LEGACY1"].proficy_row_data["Name"], "LEGACY1")
+        self.assertEqual(loaded["LEGACY1"].linked_address, "%R00001")
+
+    def test_extended_columns_round_trip(self) -> None:
+        original = {
+            "TAG1": TagRecord(
+                tag_name="TAG1",
+                description="DESC ONE",
+                vessels={"C-LEGACY"},
+                proficy_row_data={"Name": "TAG1", "IOAddress": "%R00111"},
+                cimplicity_row_data={"PT_ID": "TAG1", "DESC": "Desc One", "ADDR": "%R00111"},
+                cimplicity_pt_id="TAG1",
+                proficy_name="TAG1",
+                linked_address="%R00111",
+                sync_status="synced",
+                link_method="address",
+            )
+        }
+        self.repository.save(original)
+        loaded = self.repository.load()["TAG1"]
+        self.assertEqual(loaded.sync_status, "synced")
+        self.assertEqual(loaded.cimplicity_pt_id, "TAG1")
+        self.assertEqual(loaded.link_method, "address")
 
 
 if __name__ == "__main__":
