@@ -88,7 +88,7 @@ class AppController:
 
     def _persist_tags(self) -> None:
         """Persists current in-memory table to tags.csv."""
-        self._persist_tags()
+        self._repository.save(self._tags)
 
     def refresh_from_disk(self) -> None:
         """Reloads the current database state from disk and refreshes UI."""
@@ -149,8 +149,20 @@ class AppController:
         updated_row: dict[str, str],
     ) -> None:
         """Queues change only when updated row differs from imported row."""
-        if original_row != updated_row:
+        if self._normalized_row_for_compare(original_row) != self._normalized_row_for_compare(
+            updated_row
+        ):
             self._queue_change(vessel=vessel, row_data=updated_row)
+
+    @staticmethod
+    def _normalized_row_for_compare(row: dict[str, str]) -> dict[str, str]:
+        """Normalizes row fields so cosmetic casing changes do not queue exports."""
+        normalized = {str(key): str(value).strip() for key, value in row.items()}
+        if "Name" in normalized:
+            normalized["Name"] = normalized["Name"].upper()
+        if "Description" in normalized:
+            normalized["Description"] = normalized["Description"].upper()
+        return normalized
 
     def _refresh_filter_values(self) -> None:
         assert self._window.vessel_combo
