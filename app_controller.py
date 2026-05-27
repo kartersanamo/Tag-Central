@@ -3,13 +3,15 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 
-from app_config import CONFLICT_GROUP_COLORS, DATABASE_FILE, EXPORT_FOLDER
+from app_config import BACKUP_FOLDER, CONFLICT_GROUP_COLORS, DATABASE_FILE, EXPORT_FOLDER
 from models.tag_record import TagRecord
+from services.backup_service import BackupService
 from services.description_suggester import DescriptionSuggester
 from services.export_service import ExportService
 from services.spreadsheet_loader import SpreadsheetLoader
 from services.tag_repository import TagRepository
 from services.tag_sync_service import TagSyncService
+from ui.backups_dialog import BackupsDialog
 from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
 from ui.main_window import MainWindow
@@ -24,6 +26,7 @@ class AppController:
         self._loader = SpreadsheetLoader()
         self._suggester = DescriptionSuggester()
         self._export_service = ExportService(EXPORT_FOLDER)
+        self._backup_service = BackupService(BACKUP_FOLDER, DATABASE_FILE)
         self._sync = TagSyncService()
         self._tags: dict[str, TagRecord] = self._repository.load()
         self._active_vessel_filter: str | None = None
@@ -42,15 +45,15 @@ class AppController:
         self.refresh_table()
 
     def _bind_events(self) -> None:
-        assert self._window.import_button and self._window.save_button
+        assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
         assert self._window.export_changes_button
         assert self._window.change_tag_button and self._window.vessel_combo
         assert self._window.tree and self._window.context_menu
 
         self._window.import_button.configure(command=self.import_spreadsheet)
-        self._window.save_button.configure(command=self.save_database_manual)
-        self._window.refresh_button.configure(command=self.refresh_table)
+        self._window.backups_button.configure(command=self.open_backups_page)
+        self._window.refresh_button.configure(command=self.refresh_from_disk)
         self._window.export_changes_button.configure(command=self.export_pending_changes)
         self._window.reset_filter_button.configure(command=self.reset_vessel_filter)
         self._window.change_tag_button.configure(command=self.edit_selected_tag)
@@ -83,12 +86,49 @@ class AppController:
         self._window.context_menu.entryconfigure(1, label=delete_label)
         self._window.context_menu.post(event.x_root, event.y_root)
 
-    def save_database_manual(self) -> None:
-        try:
-            self._repository.save(self._tags)
-            messagebox.showinfo("Saved", "Database saved successfully.")
-        except OSError as error:
-            messagebox.showerror("Save Error", str(error))
+    def _persist_tags(self) -> None:
+        """Persists current in-memory table to tags.csv."""
+        self._persist_tags()
+
+    def refresh_from_disk(self) -> None:
+        """Reloads the current database state from disk and refreshes UI."""
+        self._tags = self._repository.load()
+        self._refresh_filter_values()
+        self.refresh_table()
+        if not self._tags:
+            messagebox.showwarning(
+                "Database Missing or Empty",
+                "No tags were loaded from disk.\n"
+                "The database file may be missing or empty.",
+            )
+
+    def open_backups_page(self) -> None:
+        """Opens full backup management page."""
+        BackupsDialog(
+            self._window.root,
+            backup_service=self._backup_service,
+            on_restore=self._restore_backup_from_page,
+            on_revert_latest=self._revert_latest_backup_from_page,
+        ).show()
+
+    def _restore_backup_from_page(self, backup_name: str) -> bool:
+        """Loads selected backup after saving temporary pre-load backup."""
+        self._persist_tags()
+        self._backup_service.create_preload_backup()
+        self._backup_service.restore_backup(backup_name)
+        self._tags = self._repository.load()
+        self._refresh_filter_values()
+        self.refresh_table()
+        return True
+
+    def _revert_latest_backup_from_page(self) -> bool:
+        """Restores the temporary pre-load backup if available."""
+        if not self._backup_service.restore_preload_backup():
+            return False
+        self._tags = self._repository.load()
+        self._refresh_filter_values()
+        self.refresh_table()
+        return True
 
     def _update_pending_change_indicator(self) -> None:
         total = sum(len(changes) for changes in self._pending_changes.values())
@@ -457,7 +497,7 @@ class AppController:
                     self._conflicted_tags.add(existing_tag)
                     self._conflicted_tags.add(new_tag)
 
-        self._repository.save(self._tags)
+        self._persist_tags()
         self._refresh_filter_values()
         self.refresh_table()
         self._notify_import_complete(summary)
@@ -563,7 +603,7 @@ class AppController:
         if old_tag in self._conflicted_tags:
             self._conflicted_tags.discard(old_tag)
             self._conflicted_tags.add(new_tag)
-        self._repository.save(self._tags)
+        self._persist_tags()
 
         has_changed = (
             old_tag != new_tag
@@ -629,7 +669,7 @@ class AppController:
             self._tag_conflict_group.pop(tag_name, None)
             self._view_conflict_session_tags.discard(tag_name)
 
-        self._repository.save(self._tags)
+        self._persist_tags()
         self._refresh_filter_values()
         self.refresh_table()
         messagebox.showinfo("Deleted", f"Deleted {len(selected_tags)} tag(s).")

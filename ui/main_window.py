@@ -20,7 +20,7 @@ class MainWindow:
         self.view_conflicts_check: ttk.Checkbutton | None = None
 
         self.import_button: ttk.Button | None = None
-        self.save_button: ttk.Button | None = None
+        self.backups_button: ttk.Button | None = None
         self.refresh_button: ttk.Button | None = None
         self.export_changes_button: ttk.Button | None = None
         self.reset_filter_button: ttk.Button | None = None
@@ -57,12 +57,12 @@ class MainWindow:
         control_bar.pack(fill="x")
 
         self.import_button = ttk.Button(control_bar, text="Import Spreadsheet")
-        self.save_button = ttk.Button(control_bar, text="Save")
+        self.backups_button = ttk.Button(control_bar, text="Backups")
         self.refresh_button = ttk.Button(control_bar, text="Refresh")
         self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
         self.import_button.pack(side="left", padx=(0, 8))
-        self.save_button.pack(side="left", padx=8)
+        self.backups_button.pack(side="left", padx=8)
         self.refresh_button.pack(side="left", padx=8)
         self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)

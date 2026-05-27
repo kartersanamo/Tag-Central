@@ -9,6 +9,7 @@ MIN_WINDOW_SIZE = (980, 620)
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATABASE_FILE = PROJECT_ROOT / "tags.csv"
 EXPORT_FOLDER = PROJECT_ROOT / "exports"
+BACKUP_FOLDER = PROJECT_ROOT / "backups"
 
 DEFAULT_TABLE_COLUMNS = (
     "tag_name",
