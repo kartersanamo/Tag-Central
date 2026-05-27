@@ -93,14 +93,25 @@ class CimplicityReviewQueue:
         self.save()
 
     def remove(self, vessel: str, pt_id: str) -> None:
-        vessel = vessel.strip().upper()
-        pt_id = pt_id.strip().upper()
+        self.remove_many([(vessel, pt_id)])
+
+    def remove_many(self, keys: list[tuple[str, str]]) -> int:
+        """Removes multiple queue entries in one write. Returns count removed."""
+        if not keys:
+            return 0
+        key_set = {
+            (vessel.strip().upper(), pt_id.strip().upper()) for vessel, pt_id in keys
+        }
+        before = len(self._items)
         self._items = [
             item
             for item in self._items
-            if not (item.vessel == vessel and item.pt_id == pt_id)
+            if (item.vessel, item.pt_id) not in key_set
         ]
-        self.save()
+        removed = before - len(self._items)
+        if removed:
+            self.save()
+        return removed
 
     def clear_vessel(self, vessel: str) -> None:
         vessel = vessel.strip().upper()

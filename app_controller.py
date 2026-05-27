@@ -870,8 +870,8 @@ class AppController:
         CimplicityReviewDialog(
             self._window.root,
             review_queue=self._cross_program.review_queue,
-            on_create_proficy=self._create_proficy_from_review_item,
-            on_dismiss=self._dismiss_review_item,
+            on_create_proficy=self._create_proficy_from_review_items,
+            on_dismiss=self._dismiss_review_items,
         )
 
     def open_cimplicity_tasks(self) -> None:
@@ -881,42 +881,106 @@ class AppController:
             on_change=self._update_manual_tasks_indicator,
         )
 
-    def _create_proficy_from_review_item(self, item) -> None:
+    def _create_proficy_from_review_items(self, items: list) -> None:
         from services.cimplicity_review_queue import ReviewQueueItem
 
-        assert isinstance(item, ReviewQueueItem)
-        row_data = {
-            "Name": item.pt_id,
-            "Description": item.description,
-            "IOAddress": item.address,
-            "Address": item.address,
-        }
-        self._cross_program.import_proficy_row(
-            self._tags,
-            tag_name=item.pt_id,
-            description=item.description,
-            vessel=item.vessel,
-            row_data=row_data,
-        )
-        record = self._tags[item.pt_id]
-        record.set_cimplicity_snapshot(item.row_data, item.vessel, "manual")
-        record.cimplicity_pt_id = item.pt_id
-        record.sync_status = SYNC_SYNCED
-        export_row = record.proficy_export_row()
-        target_vessels = record.vessels or {item.vessel}
-        for vessel in target_vessels:
-            self._queue_change(vessel=vessel, row_data=export_row)
-        self._cross_program.review_queue.remove(item.vessel, item.pt_id)
-        self._persist_tags()
+        queue_items = [item for item in items if isinstance(item, ReviewQueueItem)]
+        if not queue_items:
+            return
+
+        loading = LoadingDialog(self._window.root, title="Creating Proficy Tags...")
+        loading.show(f"Creating {len(queue_items)} Proficy tag(s)...")
+        try:
+            created, skipped = self._apply_create_proficy_from_review_items(
+                queue_items, loading=loading
+            )
+        finally:
+            loading.close()
+
+        if created == 0 and skipped == 0:
+            return
+        summary = f"Created {created} Proficy tag(s) and queued them for export."
+        if skipped:
+            summary += f"\nSkipped {skipped} item(s) that already exist as tags."
+        messagebox.showinfo("Proficy Tags Created", summary)
+
+    def _apply_create_proficy_from_review_items(
+        self,
+        items: list,
+        *,
+        loading: LoadingDialog | None = None,
+    ) -> tuple[int, int]:
+        from services.cimplicity_review_queue import ReviewQueueItem
+
+        created = 0
+        skipped = 0
+        remove_keys: list[tuple[str, str]] = []
+        total = len(items)
+
+        for index, item in enumerate(items, start=1):
+            if not isinstance(item, ReviewQueueItem):
+                continue
+            if loading is not None and (
+                index == 1 or index % 50 == 0 or index == total
+            ):
+                loading.update_status(f"Creating Proficy tags... {index}/{total}")
+
+            remove_keys.append((item.vessel, item.pt_id))
+            if item.pt_id in self._tags:
+                skipped += 1
+                continue
+
+            row_data = {
+                "Name": item.pt_id,
+                "Description": item.description,
+                "IOAddress": item.address,
+                "Address": item.address,
+            }
+            self._cross_program.import_proficy_row(
+                self._tags,
+                tag_name=item.pt_id,
+                description=item.description,
+                vessel=item.vessel,
+                row_data=row_data,
+            )
+            record = self._tags[item.pt_id]
+            record.set_cimplicity_snapshot(item.row_data, item.vessel, "manual")
+            record.cimplicity_pt_id = item.pt_id
+            record.sync_status = SYNC_SYNCED
+            export_row = record.proficy_export_row()
+            target_vessels = record.vessels or {item.vessel}
+            for vessel in target_vessels:
+                self._queue_change(vessel=vessel, row_data=export_row)
+            created += 1
+
+        if remove_keys:
+            self._cross_program.review_queue.remove_many(remove_keys)
+        if created > 0:
+            self._persist_tags()
         self._update_review_queue_indicator()
         self._refresh_filter_values()
         self.refresh_table()
+        return created, skipped
 
-    def _dismiss_review_item(self, item) -> None:
+    def _dismiss_review_items(self, items: list) -> None:
         from services.cimplicity_review_queue import ReviewQueueItem
 
-        assert isinstance(item, ReviewQueueItem)
-        self._cross_program.review_queue.remove(item.vessel, item.pt_id)
+        queue_items = [item for item in items if isinstance(item, ReviewQueueItem)]
+        if not queue_items:
+            return
+
+        if len(queue_items) > 25:
+            loading = LoadingDialog(self._window.root, title="Dismissing Review Items...")
+            loading.show(f"Dismissing {len(queue_items)} review item(s)...")
+            try:
+                keys = [(item.vessel, item.pt_id) for item in queue_items]
+                self._cross_program.review_queue.remove_many(keys)
+            finally:
+                loading.close()
+        else:
+            keys = [(item.vessel, item.pt_id) for item in queue_items]
+            self._cross_program.review_queue.remove_many(keys)
+
         self._update_review_queue_indicator()
 
     def _on_view_conflicts_toggle(self) -> None:

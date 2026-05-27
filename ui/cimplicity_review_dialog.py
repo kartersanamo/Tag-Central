@@ -16,8 +16,8 @@ class CimplicityReviewDialog:
         self,
         parent: tk.Tk,
         review_queue: CimplicityReviewQueue,
-        on_create_proficy: Callable[[ReviewQueueItem], None] | None = None,
-        on_dismiss: Callable[[ReviewQueueItem], None] | None = None,
+        on_create_proficy: Callable[[list[ReviewQueueItem]], None] | None = None,
+        on_dismiss: Callable[[list[ReviewQueueItem]], None] | None = None,
     ) -> None:
         self._queue = review_queue
         self._on_create_proficy = on_create_proficy
@@ -57,7 +57,15 @@ class CimplicityReviewDialog:
         ttk.Button(
             button_bar, text="Create Proficy Tag", command=self._create_proficy
         ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            button_bar,
+            text="Create Proficy Tag For All",
+            command=self._create_proficy_all,
+        ).pack(side="left", padx=8)
         ttk.Button(button_bar, text="Dismiss Selected", command=self._dismiss).pack(
+            side="left", padx=8
+        )
+        ttk.Button(button_bar, text="Dismiss All", command=self._dismiss_all).pack(
             side="left", padx=8
         )
         ttk.Button(button_bar, text="Close", command=self._window.destroy).pack(side="right")
@@ -88,8 +96,24 @@ class CimplicityReviewDialog:
             return
         if self._on_create_proficy is None:
             return
-        for item in selected:
-            self._on_create_proficy(item)
+        self._on_create_proficy(selected)
+        self._render()
+
+    def _create_proficy_all(self) -> None:
+        all_items = list(self._queue.items)
+        if not all_items:
+            messagebox.showinfo("Review Queue Empty", "There are no items in the review queue.")
+            return
+        if self._on_create_proficy is None:
+            return
+        confirmed = messagebox.askyesno(
+            "Create All Proficy Tags",
+            f"Create Proficy tags for all {len(all_items)} review queue item(s)?\n\n"
+            "Each new tag will be queued for Proficy export.",
+        )
+        if not confirmed:
+            return
+        self._on_create_proficy(all_items)
         self._render()
 
     def _dismiss(self) -> None:
@@ -98,6 +122,20 @@ class CimplicityReviewDialog:
             return
         if self._on_dismiss is None:
             return
-        for item in selected:
-            self._on_dismiss(item)
+        self._on_dismiss(selected)
+        self._render()
+
+    def _dismiss_all(self) -> None:
+        all_items = list(self._queue.items)
+        if not all_items:
+            return
+        if self._on_dismiss is None:
+            return
+        confirmed = messagebox.askyesno(
+            "Dismiss All",
+            f"Dismiss all {len(all_items)} review queue item(s) without creating Proficy tags?",
+        )
+        if not confirmed:
+            return
+        self._on_dismiss(all_items)
         self._render()
