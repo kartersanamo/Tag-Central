@@ -14,6 +14,7 @@ class EditTagDialog:
         parent: tk.Tk,
         tag_name: str,
         description: str,
+        address: str,
         vessels: set[str],
     ) -> None:
         self._result: dict[str, object] | None = None
@@ -26,6 +27,7 @@ class EditTagDialog:
 
         self._tag_var = tk.StringVar(value=tag_name)
         self._description_var = tk.StringVar(value=description)
+        self._address_var = tk.StringVar(value=address)
         self._build_ui(sorted(vessels))
 
     def show(self) -> dict[str, object] | None:
@@ -43,6 +45,10 @@ class EditTagDialog:
         ttk.Label(form, text="Description").grid(row=1, column=0, sticky="w", pady=(0, 8))
         ttk.Entry(form, textvariable=self._description_var, width=48).grid(
             row=1, column=1, sticky="ew", pady=(0, 8)
+        )
+        ttk.Label(form, text="Address").grid(row=2, column=0, sticky="w", pady=(0, 8))
+        ttk.Entry(form, textvariable=self._address_var, width=48).grid(
+            row=2, column=1, sticky="ew", pady=(0, 8)
         )
         form.columnconfigure(1, weight=1)
 
@@ -92,6 +98,7 @@ class EditTagDialog:
         self._result = {
             "tag_name": self._tag_var.get().strip().upper(),
             "description": self._description_var.get().strip().upper(),
+            "address": self._address_var.get().strip().upper(),
             "vessels": vessels,
         }
         self._window.destroy()

@@ -240,7 +240,17 @@ class AppController:
             normalized["Name"] = normalized["Name"].upper()
         if "Description" in normalized:
             normalized["Description"] = normalized["Description"].upper()
+        if "Address" in normalized:
+            normalized["Address"] = normalized["Address"].upper()
         return normalized
+
+    @staticmethod
+    def _extract_address(row_data: dict[str, str]) -> str:
+        """Gets address from row data using common key variants."""
+        for key in ("Address", "ADDRESS", "address"):
+            if key in row_data and str(row_data[key]).strip():
+                return str(row_data[key]).strip().upper()
+        return ""
 
     def _refresh_filter_values(self) -> None:
         assert self._window.vessel_combo
@@ -291,9 +301,10 @@ class AppController:
                 continue
 
             vessels_text = ", ".join(sorted(record.vessels))
+            address_text = self._extract_address(record.row_data)
             peers_text = ", ".join(self._tag_conflict_peers.get(tag_name, []))
             searchable = (
-                f"{record.tag_name} {record.description} {vessels_text} {peers_text}"
+                f"{record.tag_name} {record.description} {address_text} {vessels_text} {peers_text}"
             ).lower()
             if query and query not in searchable:
                 continue
@@ -321,12 +332,13 @@ class AppController:
         self._window.tree.delete(*self._window.tree.get_children())
         visible_groups: set[int] = set()
 
-        for tag_name, record in rows_to_show:
+        for row_number, (tag_name, record) in enumerate(rows_to_show, start=1):
             group_id = self._tag_conflict_group.get(tag_name)
             peers = self._tag_conflict_peers.get(tag_name, [])
             group_label = f"G{group_id}" if group_id is not None else ""
             conflicts_with = ", ".join(peers)
             vessels_text = ", ".join(sorted(record.vessels))
+            address_text = self._extract_address(record.row_data)
 
             row_tags: tuple[str, ...] = ()
             if group_id is not None:
@@ -338,8 +350,10 @@ class AppController:
                 "",
                 "end",
                 values=(
+                    row_number,
                     record.tag_name,
                     record.description,
+                    address_text,
                     group_label,
                     conflicts_with,
                     vessels_text,
@@ -657,9 +671,10 @@ class AppController:
             return
 
         current_values = self._window.tree.item(selection[0], "values")
-        old_tag = str(current_values[0])
+        old_tag = str(current_values[1])
         record = self._tags[old_tag]
         old_description = record.description
+        old_address = self._extract_address(record.row_data)
         old_vessels = set(record.vessels)
         old_row_data = dict(record.row_data)
 
@@ -667,6 +682,7 @@ class AppController:
             self._window.root,
             tag_name=record.tag_name,
             description=record.description,
+            address=old_address,
             vessels=set(record.vessels),
         ).show()
         if edited is None:
@@ -674,6 +690,7 @@ class AppController:
 
         new_tag = str(edited["tag_name"]).strip().upper()
         new_description = str(edited["description"]).strip().upper()
+        new_address = str(edited["address"]).strip().upper()
         new_vessels = set(edited["vessels"])
         if not new_tag:
             messagebox.showwarning("Invalid Tag", "Tag name cannot be empty.")
@@ -698,13 +715,16 @@ class AppController:
         has_changed = (
             old_tag != new_tag
             or old_description != new_description
+            or old_address != new_address
             or old_vessels != new_vessels
         )
+        record.row_data["Address"] = new_address
         if has_changed:
             target_vessels = new_vessels or old_vessels or {"GLOBAL"}
             updated_row = dict(old_row_data)
             updated_row["Name"] = new_tag
             updated_row["Description"] = new_description
+            updated_row["Address"] = new_address
             for vessel in target_vessels:
                 self._queue_change(
                     vessel=vessel,
@@ -819,7 +839,7 @@ class AppController:
             values = self._window.tree.item(item_id, "values")
             if not values:
                 continue
-            tag_name = str(values[0])
+            tag_name = str(values[1])
             if tag_name in self._tags:
                 selected_tags.append(tag_name)
         return selected_tags
