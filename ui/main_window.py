@@ -22,6 +22,7 @@ class MainWindow:
         self.import_button: ttk.Button | None = None
         self.save_button: ttk.Button | None = None
         self.refresh_button: ttk.Button | None = None
+        self.export_changes_button: ttk.Button | None = None
         self.reset_filter_button: ttk.Button | None = None
         self.change_tag_button: ttk.Button | None = None
         self.vessel_combo: ttk.Combobox | None = None
@@ -37,6 +38,7 @@ class MainWindow:
         style.configure("App.TFrame", background="#f5f7fa")
         style.configure("Header.TLabel", font=("Helvetica", 17, "bold"))
         style.configure("Subtitle.TLabel", foreground="#4b5563")
+        style.configure("ExportPending.TButton", foreground="#b00020")
 
     def _build_layout(self) -> None:
         self.root.configure(bg="#f5f7fa")
@@ -57,10 +59,12 @@ class MainWindow:
         self.import_button = ttk.Button(control_bar, text="Import Spreadsheet")
         self.save_button = ttk.Button(control_bar, text="Save")
         self.refresh_button = ttk.Button(control_bar, text="Refresh")
+        self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
         self.import_button.pack(side="left", padx=(0, 8))
         self.save_button.pack(side="left", padx=8)
         self.refresh_button.pack(side="left", padx=8)
+        self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)
 
         filter_bar = ttk.Frame(main)
@@ -119,3 +123,13 @@ class MainWindow:
         """Updates the View Conflicts checkbox label with the current count."""
         if self.view_conflicts_check is not None:
             self.view_conflicts_check.configure(text=f"View Conflicts ({count})")
+
+    def set_pending_change_count(self, count: int) -> None:
+        """Updates export button text/style based on pending changes."""
+        if self.export_changes_button is None:
+            return
+        self.export_changes_button.configure(text=f"Export Changes ({count})")
+        if count > 0:
+            self.export_changes_button.configure(style="ExportPending.TButton")
+        else:
+            self.export_changes_button.configure(style="TButton")
