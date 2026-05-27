@@ -22,8 +22,6 @@ class ExportService:
             rows = []
             for change in changes:
                 row = dict(change["row"])  # type: ignore[arg-type]
-                row["old_tag"] = change["old_tag"]
-                row["new_tag"] = change["new_tag"]
                 rows.append(row)
 
             frame = pd.DataFrame(rows)

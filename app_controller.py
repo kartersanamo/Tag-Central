@@ -97,13 +97,9 @@ class AppController:
     def _queue_change(
         self,
         vessel: str,
-        old_tag: str,
-        new_tag: str,
         row_data: dict[str, str],
     ) -> None:
-        self._pending_changes.setdefault(vessel, []).append(
-            {"old_tag": old_tag, "new_tag": new_tag, "row": dict(row_data)}
-        )
+        self._pending_changes.setdefault(vessel, []).append({"row": dict(row_data)})
         self._update_pending_change_indicator()
 
     def _refresh_filter_values(self) -> None:
@@ -397,11 +393,12 @@ class AppController:
                     self._sync.add_vessel_to_existing(self._tags, existing_tag, vessel)
                     summary["resolved_use_existing"] += 1
                     summary["merged_to_existing"] += 1
+                    updated_row = dict(row_data)  # type: ignore[arg-type]
+                    updated_row["Name"] = existing_tag
+                    updated_row["Description"] = self._tags[existing_tag].description
                     self._queue_change(
                         vessel=vessel,
-                        old_tag=imported_tag,
-                        new_tag=existing_tag,
-                        row_data=row_data,  # type: ignore[arg-type]
+                        row_data=updated_row,
                     )
                     self._conflicted_tags.add(existing_tag)
                     continue
@@ -417,11 +414,12 @@ class AppController:
                     )
                     summary["resolved_keep_both"] += 1
                     summary["new_tags_created"] += 1
+                    updated_row = dict(row_data)  # type: ignore[arg-type]
+                    updated_row["Name"] = new_tag
+                    updated_row["Description"] = imported_description
                     self._queue_change(
                         vessel=vessel,
-                        old_tag=imported_tag,
-                        new_tag=new_tag,
-                        row_data=row_data,  # type: ignore[arg-type]
+                        row_data=updated_row,
                     )
                     self._conflicted_tags.add(existing_tag)
                     self._conflicted_tags.add(new_tag)
@@ -541,12 +539,13 @@ class AppController:
         )
         if has_changed:
             target_vessels = new_vessels or old_vessels or {"GLOBAL"}
+            updated_row = dict(old_row_data)
+            updated_row["Name"] = new_tag
+            updated_row["Description"] = new_description
             for vessel in target_vessels:
                 self._queue_change(
                     vessel=vessel,
-                    old_tag=old_tag,
-                    new_tag=new_tag,
-                    row_data=old_row_data,
+                    row_data=updated_row,
                 )
 
         self._refresh_filter_values()
@@ -584,12 +583,13 @@ class AppController:
             record = self._tags.pop(tag_name, None)
             if record is not None:
                 vessels = record.vessels or {"GLOBAL"}
+                deleted_row = dict(record.row_data)
+                deleted_row["Name"] = ""
+                deleted_row["Description"] = record.description
                 for vessel in vessels:
                     self._queue_change(
                         vessel=vessel,
-                        old_tag=tag_name,
-                        new_tag="__DELETED__",
-                        row_data=record.row_data,
+                        row_data=deleted_row,
                     )
             self._conflicted_tags.discard(tag_name)
             self._tag_conflict_peers.pop(tag_name, None)
