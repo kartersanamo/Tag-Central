@@ -1,5 +1,7 @@
 """Application orchestration and event handlers."""
 
+from collections.abc import Callable
+
 import tkinter as tk
 import re
 from tkinter import filedialog, messagebox, simpledialog
@@ -124,11 +126,7 @@ class AppController:
 
     def _bind_events(self) -> None:
         assert self._window.import_proficy_button and self._window.import_cimplicity_button
-        assert (
-            self._window.align_selected_button
-            and self._window.cimplicity_review_button
-            and self._window.cimplicity_tasks_button
-        )
+        assert self._window.cimplicity_review_button and self._window.cimplicity_tasks_button
         assert self._window.program_filter_combo
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
@@ -143,7 +141,6 @@ class AppController:
 
         self._window.import_proficy_button.configure(command=self.import_proficy_spreadsheet)
         self._window.import_cimplicity_button.configure(command=self.import_cimplicity_spreadsheet)
-        self._window.align_selected_button.configure(command=self.align_selected_to_cimplicity)
         self._window.cimplicity_review_button.configure(command=self.open_cimplicity_review)
         self._window.cimplicity_tasks_button.configure(command=self.open_cimplicity_tasks)
         self._window.import_button.configure(command=self.import_proficy_spreadsheet)
@@ -1727,6 +1724,16 @@ class AppController:
                 messagebox.showerror("Cimplicity Import Error", str(error))
                 return
 
+            loading.update_status("Checking for missing descriptions...")
+            cimplicity_desc_summary: dict[str, object] = {
+                "rows_missing_description_filled": 0,
+                "pending_manual_tasks": [],
+            }
+            if not self._fill_missing_cimplicity_descriptions(
+                raw_rows, vessel, cimplicity_desc_summary
+            ):
+                return
+
             loading.update_status("Normalizing imported rows...")
             prepared = self._cross_program.prepare_cimplicity_rows(raw_rows)
 
@@ -1741,6 +1748,8 @@ class AppController:
 
         dry_lines = list(analysis.report_lines) + [
             "",
+            f"Descriptions generated (manual tasks): "
+            f"{int(cimplicity_desc_summary['rows_missing_description_filled'])}",
             f"Estimated review queue additions: {analysis.review_queue_added}",
             f"Rows needing resolver: {len(analysis.actionable)}",
             f"Rows already aligned (auto-pass): {analysis.linked_synced}",
@@ -1749,6 +1758,15 @@ class AppController:
             self._window.root, "Cimplicity Import Preview", dry_lines
         ).show():
             return
+
+        pending_tasks = cimplicity_desc_summary.get("pending_manual_tasks", [])
+        if isinstance(pending_tasks, list):
+            for task in pending_tasks:
+                if isinstance(task, dict):
+                    self._manual_tasks.add_task(**task)
+            if pending_tasks:
+                self._update_manual_tasks_indicator()
+
         if len(prepared) >= BULK_IMPORT_BACKUP_THRESHOLD:
             self._auto_backup_before_bulk("cimplicity_import")
 
@@ -1763,6 +1781,9 @@ class AppController:
             "skipped": 0,
             "proficy_exports_queued": 0,
             "manual_cimplicity_flags": 0,
+            "rows_missing_description_filled": int(
+                cimplicity_desc_summary["rows_missing_description_filled"]
+            ),
         }
 
         dialog_rows: list[dict[str, str]] = []
@@ -1904,6 +1925,7 @@ class AppController:
             self._persist_tags()
             self._refresh_filter_values()
             self._update_review_queue_indicator()
+            self._update_manual_tasks_indicator()
             self.clear_inline_find_replace(refresh=False)
             self.refresh_table()
         finally:
@@ -1917,6 +1939,8 @@ class AppController:
 
     def _notify_cimplicity_import_complete(self, summary: dict[str, int]) -> None:
         apply_lines = [
+            f"Descriptions generated (Cimplicity manual tasks): "
+            f"{summary.get('rows_missing_description_filled', 0)}",
             f"Aligned Proficy to Cimplicity: {summary['auto_aligned']}",
             f"Linked only (still needs align): {summary['linked_synced']}",
             f"Sent to review queue: {summary['review_queue_added']}",
@@ -1948,20 +1972,77 @@ class AppController:
     def _fill_missing_descriptions(
         self, rows: list[dict[str, str]], summary: dict[str, int]
     ) -> bool:
+        return self._fill_missing_descriptions_for_field(
+            rows=rows,
+            summary=summary,
+            tag_field="Name",
+            description_field="Description",
+            on_apply=None,
+        )
+
+    def _fill_missing_cimplicity_descriptions(
+        self,
+        rows: list[dict[str, str]],
+        vessel: str,
+        summary: dict[str, object],
+    ) -> bool:
+        pending_tasks = summary.setdefault("pending_manual_tasks", [])
+        if not isinstance(pending_tasks, list):
+            summary["pending_manual_tasks"] = pending_tasks = []
+
+        def queue_manual_task(
+            pt_id: str, old_value: str, new_value: str, row_index: int
+        ) -> None:
+            pending_tasks.append(
+                {
+                    "vessel": vessel,
+                    "tag_name": pt_id,
+                    "field": "description",
+                    "old_value": old_value,
+                    "new_value": new_value,
+                    "reason": (
+                        "Cimplicity import row had empty DESC; enter this description "
+                        f"in Cimplicity (row {row_index + 1})"
+                    ),
+                }
+            )
+
+        fill_summary: dict[str, int] = {"rows_missing_description_filled": 0}
+        ok = self._fill_missing_descriptions_for_field(
+            rows=rows,
+            summary=fill_summary,
+            tag_field="PT_ID",
+            description_field="DESC",
+            on_apply=queue_manual_task,
+        )
+        summary["rows_missing_description_filled"] = fill_summary[
+            "rows_missing_description_filled"
+        ]
+        return ok
+
+    def _fill_missing_descriptions_for_field(
+        self,
+        *,
+        rows: list[dict[str, str]],
+        summary: dict[str, int],
+        tag_field: str,
+        description_field: str,
+        on_apply: Callable[[str, str, str, int], None] | None = None,
+    ) -> bool:
         used_descriptions: set[str] = {
             record.description.strip().upper()
             for record in self._tags.values()
             if record.description.strip()
         }
         for row_data in rows:
-            existing_description = row_data.get("Description", "").strip().upper()
+            existing_description = row_data.get(description_field, "").strip().upper()
             if existing_description:
                 used_descriptions.add(existing_description)
 
         candidates: list[dict[str, object]] = []
         for index, row_data in enumerate(rows):
-            tag_name = row_data.get("Name", "").strip().upper()
-            description = row_data.get("Description", "").strip().upper()
+            tag_name = row_data.get(tag_field, "").strip().upper()
+            description = row_data.get(description_field, "").strip().upper()
             if tag_name and not description:
                 suggestion = self._suggester.suggest_unique(tag_name, used_descriptions)
                 candidates.append(
@@ -1975,15 +2056,29 @@ class AppController:
         if not candidates:
             return True
 
-        edited = MissingDescriptionDialog(self._window.root, candidates).show()
+        dialog_title = (
+            "Review Missing Cimplicity Descriptions"
+            if description_field == "DESC"
+            else "Review Missing Descriptions"
+        )
+        self._window.root.update()
+        edited = MissingDescriptionDialog(
+            self._window.root, candidates, title=dialog_title
+        ).show()
         if edited is None:
             return False
 
         for row_index, description in edited.items():
             if not description:
                 continue
-            rows[row_index]["Description"] = description
+            row_data = rows[row_index]
+            old_value = str(row_data.get(description_field, "")).strip().upper()
+            row_data[description_field] = description
             summary["rows_missing_description_filled"] += 1
+            if on_apply is not None:
+                tag_name = str(row_data.get(tag_field, "")).strip().upper()
+                on_apply(tag_name, old_value, description, row_index)
+
         return True
 
     def _notify_import_complete(self, summary: dict[str, int]) -> None:

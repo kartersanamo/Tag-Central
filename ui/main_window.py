@@ -30,7 +30,6 @@ class MainWindow:
         self.import_button: ttk.Button | None = None
         self.import_proficy_button: ttk.Button | None = None
         self.import_cimplicity_button: ttk.Button | None = None
-        self.align_selected_button: ttk.Button | None = None
         self.cimplicity_review_button: ttk.Button | None = None
         self.cimplicity_tasks_button: ttk.Button | None = None
         self.program_filter_combo: ttk.Combobox | None = None
@@ -81,7 +80,6 @@ class MainWindow:
         self.import_proficy_button = ttk.Button(control_bar, text="Import Proficy")
         self.import_cimplicity_button = ttk.Button(control_bar, text="Import Cimplicity")
         self.import_button = self.import_proficy_button
-        self.align_selected_button = ttk.Button(control_bar, text="Align Selected to Cimplicity")
         self.cimplicity_review_button = ttk.Button(control_bar, text="Cimplicity Review (0)")
         self.cimplicity_tasks_button = ttk.Button(control_bar, text="Cimplicity Tasks (0)")
         self.backups_button = ttk.Button(control_bar, text="Backups", width = 6)
@@ -101,7 +99,6 @@ class MainWindow:
         self.review_export_queue_button.pack(side="left", padx=2)
         self.export_changes_button.pack(side="left", padx=2)
         self.cimplicity_review_button.pack(side="left", padx=2)
-        self.align_selected_button.pack(side="left", padx=2)
         self.backups_button.pack(side="left", padx=2)
         self.add_tag_button.pack(side="left", padx=2)
         self.find_replace_button.pack(side="left", padx=2)

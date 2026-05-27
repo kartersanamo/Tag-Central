@@ -9,11 +9,17 @@ from tkinter import ttk
 class MissingDescriptionDialog:
     """Allows user review/edit for generated descriptions before import."""
 
-    def __init__(self, parent: tk.Tk, candidates: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        candidates: list[dict[str, object]],
+        *,
+        title: str = "Review Missing Descriptions",
+    ) -> None:
         self._candidates = candidates
         self._result: dict[int, str] | None = None
         self._window = tk.Toplevel(parent)
-        self._window.title("Review Missing Descriptions")
+        self._window.title(title)
         self._window.geometry("980x620")
         self._window.transient(parent)
         self._window.grab_set()
