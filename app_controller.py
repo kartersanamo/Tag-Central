@@ -1158,7 +1158,7 @@ class AppController:
 
         summary = {
             "total_rows": len(prepared),
-            "linked_synced": analysis.linked_synced,
+            "linked_synced": 0,
             "auto_aligned": 0,
             "review_queue_added": analysis.review_queue_added,
             "actionable": len(analysis.actionable),
@@ -1255,7 +1255,7 @@ class AppController:
             for row_index, row in enumerate(prepared, start=1):
                 if row_index == 1 or row_index % 200 == 0:
                     loading_apply.update_status(
-                        f"Linking unchanged rows... {row_index}/{len(prepared)}"
+                        f"Auto-aligning matched rows... {row_index}/{len(prepared)}"
                     )
                 if any(int(d.get("row_index", -1)) == row.row_index for d in decisions):
                     continue
@@ -1265,10 +1265,17 @@ class AppController:
                 if link.canonical_tag and not self._cross_program._detect_issues(
                     self._tags[link.canonical_tag], row
                 ):
-                    self._cross_program.apply_cimplicity_row(
-                        self._tags, row, vessel, "link_only", canonical_tag=link.canonical_tag
+                    _, export_row = self._cross_program.apply_cimplicity_row(
+                        self._tags,
+                        row,
+                        vessel,
+                        "align_proficy",
+                        canonical_tag=link.canonical_tag,
                     )
-                    summary["linked_synced"] += 1
+                    summary["auto_aligned"] += 1
+                    if export_row:
+                        self._queue_change(vessel=vessel, row_data=export_row)
+                        summary["proficy_exports_queued"] += 1
 
             from datetime import datetime, timezone
 
@@ -1315,7 +1322,7 @@ class AppController:
             "Cimplicity Import Complete",
             "Cimplicity Import Summary\n\n"
             f"Rows read: {summary['total_rows']}\n"
-            f"Already synced (no action): {summary['linked_synced']}\n"
+            f"Linked only (still needs align): {summary['linked_synced']}\n"
             f"Aligned Proficy to Cimplicity: {summary['auto_aligned']}\n"
             f"Sent to review queue: {summary['review_queue_added']}\n"
             f"Rows needing decisions: {summary['actionable']}\n"
