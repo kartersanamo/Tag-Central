@@ -80,7 +80,7 @@ class AppController:
             "address": "Address",
             "sync_status": "Sync",
             "conflict_group": "Group",
-            "conflicts_with": "Conflicts With",
+            "conflicts_with": "Mismatches With",
             "vessels": "Vessels",
         }
 
@@ -153,10 +153,13 @@ class AppController:
             1, command=self.align_selected_to_cimplicity
         )
         self._window.context_menu.entryconfigure(
-            2, command=self.increment_selected_descriptions
+            2, command=self.jump_to_selected_mismatches
         )
-        self._window.context_menu.entryconfigure(4, command=self.add_new_tag)
-        self._window.context_menu.entryconfigure(6, command=self.delete_selected_tags)
+        self._window.context_menu.entryconfigure(
+            3, command=self.increment_selected_descriptions
+        )
+        self._window.context_menu.entryconfigure(5, command=self.add_new_tag)
+        self._window.context_menu.entryconfigure(7, command=self.delete_selected_tags)
         self._refresh_tree_heading_sort_markers()
 
     def _on_tree_heading_click(self, column_name: str) -> None:
@@ -222,7 +225,13 @@ class AppController:
             align_label = f"Align {selected_count} tags to Cimplicity"
             delete_label = f"Delete {selected_count} tags"
         self._window.context_menu.entryconfigure(1, label=align_label)
-        self._window.context_menu.entryconfigure(6, label=delete_label)
+        self._window.context_menu.entryconfigure(7, label=delete_label)
+
+        jump_candidates = self._selected_mismatch_group_tags(selection)
+        can_jump = len(jump_candidates) > 1
+        self._window.context_menu.entryconfigure(
+            2, state="normal" if can_jump else "disabled"
+        )
 
         can_increment = self._can_increment_descriptions(selection)
         if can_increment:
@@ -236,9 +245,48 @@ class AppController:
             increment_label = "Increment descriptions"
             increment_state = "disabled"
         self._window.context_menu.entryconfigure(
-            2, label=increment_label, state=increment_state
+            3, label=increment_label, state=increment_state
         )
         self._window.context_menu.post(event.x_root, event.y_root)
+
+    def _selected_mismatch_group_tags(self, tag_names: list[str]) -> list[str]:
+        """Returns sorted tags in the clicked/selected mismatch group."""
+        if not tag_names:
+            return []
+        group_id = self._tag_conflict_group.get(tag_names[0])
+        if group_id is None:
+            return []
+        return sorted(
+            tag_name
+            for tag_name in self._conflicted_tags
+            if self._tag_conflict_group.get(tag_name) == group_id
+        )
+
+    def jump_to_selected_mismatches(self) -> None:
+        """Focuses first row of mismatch group and selects the whole group."""
+        assert self._window.tree
+        selection = list(self._window.tree.selection())
+        group_tags = self._selected_mismatch_group_tags(selection)
+        if len(group_tags) <= 1:
+            messagebox.showinfo(
+                "Jump to Mismatches",
+                "Right-click a tag with internal mismatches to jump to its group.",
+            )
+            return
+
+        current_rows = [str(row_id) for row_id in self._window.tree.get_children("")]
+        visible_group_rows = [tag for tag in current_rows if tag in group_tags]
+        if not visible_group_rows:
+            messagebox.showinfo(
+                "Jump to Mismatches",
+                "No matching mismatch group rows are visible with current filters.",
+            )
+            return
+
+        first_row = visible_group_rows[0]
+        self._window.tree.selection_set(visible_group_rows)
+        self._window.tree.focus(first_row)
+        self._window.tree.see(first_row)
 
     @staticmethod
     def _description_increment_base(description: str) -> str:
