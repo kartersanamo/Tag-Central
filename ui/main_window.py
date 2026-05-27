@@ -41,6 +41,8 @@ class MainWindow:
         self.find_replace_apply_button: ttk.Button | None = None
         self.find_replace_clear_button: ttk.Button | None = None
         self.find_scope_combo: ttk.Combobox | None = None
+        self.find_replace_bar: ttk.LabelFrame | None = None
+        self._find_replace_visible = True
         self.reset_filter_button: ttk.Button | None = None
         self.change_tag_button: ttk.Button | None = None
         self.vessel_combo: ttk.Combobox | None = None
@@ -86,7 +88,7 @@ class MainWindow:
         self.backups_button = ttk.Button(control_bar, text="Backups")
         self.refresh_button = ttk.Button(control_bar, text="Refresh")
         self.add_tag_button = ttk.Button(control_bar, text="Add Tag")
-        self.find_replace_button = ttk.Button(control_bar, text="Find & Replace")
+        self.find_replace_button = ttk.Button(control_bar, text="Find & Replace ▾")
         self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
         self.import_proficy_button.pack(side="left", padx=(0, 8))
@@ -100,19 +102,19 @@ class MainWindow:
         self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)
 
-        find_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
-        find_bar.pack(fill="x", pady=(10, 8))
-        ttk.Label(find_bar, text="Find").pack(side="left", padx=(0, 6))
-        ttk.Entry(find_bar, textvariable=self.find_text_var, width=28).pack(
+        self.find_replace_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
+        self.find_replace_bar.pack(fill="x", pady=(10, 8))
+        ttk.Label(self.find_replace_bar, text="Find").pack(side="left", padx=(0, 6))
+        ttk.Entry(self.find_replace_bar, textvariable=self.find_text_var, width=28).pack(
             side="left", padx=(0, 10)
         )
-        ttk.Label(find_bar, text="Replace").pack(side="left", padx=(0, 6))
-        ttk.Entry(find_bar, textvariable=self.replace_text_var, width=28).pack(
+        ttk.Label(self.find_replace_bar, text="Replace").pack(side="left", padx=(0, 6))
+        ttk.Entry(self.find_replace_bar, textvariable=self.replace_text_var, width=28).pack(
             side="left", padx=(0, 10)
         )
-        ttk.Label(find_bar, text="Scope").pack(side="left", padx=(0, 6))
+        ttk.Label(self.find_replace_bar, text="Scope").pack(side="left", padx=(0, 6))
         self.find_scope_combo = ttk.Combobox(
-            find_bar,
+            self.find_replace_bar,
             textvariable=self.find_scope_var,
             values=("tag", "description", "both"),
             state="readonly",
@@ -120,15 +122,15 @@ class MainWindow:
         )
         self.find_scope_combo.pack(side="left", padx=(0, 10))
         ttk.Checkbutton(
-            find_bar,
+            self.find_replace_bar,
             text="Preview Changes",
             variable=self.preview_changes_var,
         ).pack(side="left", padx=(0, 10))
-        self.find_replace_apply_button = ttk.Button(find_bar, text="Apply")
+        self.find_replace_apply_button = ttk.Button(self.find_replace_bar, text="Apply")
         self.find_replace_apply_button.pack(side="left", padx=(0, 8))
-        self.find_replace_clear_button = ttk.Button(find_bar, text="Clear")
+        self.find_replace_clear_button = ttk.Button(self.find_replace_bar, text="Clear")
         self.find_replace_clear_button.pack(side="left", padx=(0, 8))
-        ttk.Label(find_bar, textvariable=self.find_replace_status_var).pack(
+        ttk.Label(self.find_replace_bar, textvariable=self.find_replace_status_var).pack(
             side="right", padx=(10, 0)
         )
 
@@ -201,6 +203,10 @@ class MainWindow:
 
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Edit Tag")
+        self.context_menu.add_command(label="Align to Cimplicity")
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Add Tag")
+        self.context_menu.add_separator()
         self.context_menu.add_command(label="Delete Tag")
 
         status = ttk.Label(main, textvariable=self.status_var, anchor="w")
@@ -248,3 +254,16 @@ class MainWindow:
             self.find_replace_status_var.set("Enter find text to filter matching rows")
             return
         self.find_replace_status_var.set(" · ".join(parts))
+
+    def toggle_find_replace_visibility(self) -> None:
+        """Shows/hides the find & replace section and updates button text."""
+        if self.find_replace_bar is None or self.find_replace_button is None:
+            return
+        if self._find_replace_visible:
+            self.find_replace_bar.pack_forget()
+            self.find_replace_button.configure(text="Find & Replace ▸")
+            self._find_replace_visible = False
+            return
+        self.find_replace_bar.pack(fill="x", pady=(10, 8), before=self.vessel_combo.master)
+        self.find_replace_button.configure(text="Find & Replace ▾")
+        self._find_replace_visible = True

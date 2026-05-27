@@ -109,7 +109,9 @@ class AppController:
         self._window.backups_button.configure(command=self.open_backups_page)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
         self._window.add_tag_button.configure(command=self.add_new_tag)
-        self._window.find_replace_button.configure(command=lambda: None)
+        self._window.find_replace_button.configure(
+            command=self._window.toggle_find_replace_visibility
+        )
         self._window.find_replace_apply_button.configure(command=self.apply_inline_find_replace)
         self._window.find_replace_clear_button.configure(command=self.clear_inline_find_replace)
         self._window.export_changes_button.configure(command=self.export_pending_changes)
@@ -134,12 +136,12 @@ class AppController:
                 column_name,
                 command=lambda value=column_name: self._on_tree_heading_click(value),
             )
+        self._window.context_menu.entryconfigure(0, command=self.edit_selected_tag)
         self._window.context_menu.entryconfigure(
-            0, command=self.edit_selected_tag
+            1, command=self.align_selected_to_cimplicity
         )
-        self._window.context_menu.entryconfigure(
-            1, command=self.delete_selected_tags
-        )
+        self._window.context_menu.entryconfigure(3, command=self.add_new_tag)
+        self._window.context_menu.entryconfigure(5, command=self.delete_selected_tags)
         self._refresh_tree_heading_sort_markers()
 
     def _on_tree_heading_click(self, column_name: str) -> None:
@@ -197,8 +199,14 @@ class AppController:
             self._window.tree.selection_set(clicked_item)
 
         selected_count = len(self._window.tree.selection())
-        delete_label = "Delete Tag" if selected_count <= 1 else f"Delete {selected_count} tags"
-        self._window.context_menu.entryconfigure(1, label=delete_label)
+        if selected_count <= 1:
+            align_label = "Align to Cimplicity"
+            delete_label = "Delete Tag"
+        else:
+            align_label = f"Align {selected_count} tags to Cimplicity"
+            delete_label = f"Delete {selected_count} tags"
+        self._window.context_menu.entryconfigure(1, label=align_label)
+        self._window.context_menu.entryconfigure(5, label=delete_label)
         self._window.context_menu.post(event.x_root, event.y_root)
 
     def _persist_tags(self) -> None:
