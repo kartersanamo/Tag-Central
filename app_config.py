@@ -10,4 +10,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DATABASE_FILE = PROJECT_ROOT / "tags.csv"
 EXPORT_FOLDER = PROJECT_ROOT / "exports"
 
-DEFAULT_TABLE_COLUMNS = ("tag_name", "description", "vessels")
+DEFAULT_TABLE_COLUMNS = (
+    "tag_name",
+    "description",
+    "conflict_group",
+    "conflicts_with",
+    "vessels",
+)
+
+CONFLICT_GROUP_COLORS = (
+    "#ffe8e8",
+    "#fff3e0",
+    "#fff9e6",
+    "#e8f5e9",
+    "#e3f2fd",
+    "#f3e5f5",
+    "#fce4ec",
+    "#e0f7fa",
+)

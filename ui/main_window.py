@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from app_config import DEFAULT_TABLE_COLUMNS
+from app_config import CONFLICT_GROUP_COLORS, DEFAULT_TABLE_COLUMNS
 
 
 class MainWindow:
@@ -92,11 +92,16 @@ class MainWindow:
         )
         self.tree.heading("tag_name", text="Tag")
         self.tree.heading("description", text="Description")
+        self.tree.heading("conflict_group", text="Group")
+        self.tree.heading("conflicts_with", text="Conflicts With")
         self.tree.heading("vessels", text="Vessels")
-        self.tree.column("tag_name", width=220, anchor="w")
-        self.tree.column("description", width=360, anchor="w")
-        self.tree.column("vessels", width=520, anchor="w")
-        self.tree.tag_configure("conflict", background="#fff4f4")
+        self.tree.column("tag_name", width=200, anchor="w")
+        self.tree.column("description", width=280, anchor="w")
+        self.tree.column("conflict_group", width=70, anchor="center")
+        self.tree.column("conflicts_with", width=260, anchor="w")
+        self.tree.column("vessels", width=320, anchor="w")
+        for index, color in enumerate(CONFLICT_GROUP_COLORS):
+            self.tree.tag_configure(f"conflict_g{index}", background=color)
 
         y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=y_scroll.set)

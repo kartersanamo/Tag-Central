@@ -4,7 +4,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 
-from app_config import DATABASE_FILE, EXPORT_FOLDER
+from app_config import CONFLICT_GROUP_COLORS, DATABASE_FILE, EXPORT_FOLDER
 from models.tag_record import TagRecord
 from services.description_suggester import DescriptionSuggester
 from services.export_service import ExportService
@@ -29,6 +29,8 @@ class AppController:
         self._tags: dict[str, TagRecord] = self._repository.load()
         self._active_vessel_filter: str | None = None
         self._conflicted_tags: set[str] = set()
+        self._tag_conflict_peers: dict[str, list[str]] = {}
+        self._tag_conflict_group: dict[str, int] = {}
 
         self._window = MainWindow(root)
         self._bind_events()
@@ -95,34 +97,80 @@ class AppController:
         assert self._window.tree
         self._recalculate_conflicted_tags()
         query = self._window.search_var.get().strip().lower()
+        view_conflicts_only = self._window.view_conflicts_var.get()
 
-        self._window.tree.delete(*self._window.tree.get_children())
-        visible_count = 0
-
-        for tag_name in sorted(self._tags):
-            record = self._tags[tag_name]
-            if self._window.view_conflicts_var.get() and tag_name not in self._conflicted_tags:
+        rows_to_show: list[tuple[str, TagRecord]] = []
+        for tag_name, record in self._tags.items():
+            if view_conflicts_only and tag_name not in self._conflicted_tags:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
 
             vessels_text = ", ".join(sorted(record.vessels))
-            searchable = f"{record.tag_name} {record.description} {vessels_text}".lower()
+            peers_text = ", ".join(self._tag_conflict_peers.get(tag_name, []))
+            searchable = (
+                f"{record.tag_name} {record.description} {vessels_text} {peers_text}"
+            ).lower()
             if query and query not in searchable:
                 continue
+            rows_to_show.append((tag_name, record))
+
+        if view_conflicts_only:
+            rows_to_show.sort(
+                key=lambda item: (
+                    self._tag_conflict_group.get(item[0], 999999),
+                    item[1].description,
+                    item[0],
+                )
+            )
+        else:
+            rows_to_show.sort(key=lambda item: item[0])
+
+        self._window.tree.delete(*self._window.tree.get_children())
+        visible_groups: set[int] = set()
+
+        for tag_name, record in rows_to_show:
+            group_id = self._tag_conflict_group.get(tag_name)
+            peers = self._tag_conflict_peers.get(tag_name, [])
+            group_label = f"G{group_id}" if group_id is not None else ""
+            conflicts_with = ", ".join(peers)
+            vessels_text = ", ".join(sorted(record.vessels))
+
+            row_tags: tuple[str, ...] = ()
+            if group_id is not None:
+                color_index = (group_id - 1) % len(CONFLICT_GROUP_COLORS)
+                row_tags = (f"conflict_g{color_index}",)
+                visible_groups.add(group_id)
 
             self._window.tree.insert(
                 "",
                 "end",
-                values=(record.tag_name, record.description, vessels_text),
-                tags=("conflict",) if record.tag_name in self._conflicted_tags else (),
+                values=(
+                    record.tag_name,
+                    record.description,
+                    group_label,
+                    conflicts_with,
+                    vessels_text,
+                ),
+                tags=row_tags,
             )
-            visible_count += 1
 
-        self._window.status_var.set(f"{visible_count} tags")
+        visible_count = len(rows_to_show)
+        if view_conflicts_only:
+            self._window.status_var.set(
+                f"{visible_count} conflict tags in {len(visible_groups)} groups"
+            )
+        else:
+            conflict_note = ""
+            if self._conflicted_tags:
+                group_count = len(
+                    {self._tag_conflict_group[tag] for tag in self._conflicted_tags}
+                )
+                conflict_note = f" | {len(self._conflicted_tags)} conflicts in {group_count} groups"
+            self._window.status_var.set(f"{visible_count} tags{conflict_note}")
 
     def _recalculate_conflicted_tags(self) -> None:
-        """Builds conflict tag set from current data state."""
+        """Builds conflict tag set and peer/group maps from current data."""
         descriptions_to_tags: dict[str, list[str]] = {}
         for tag_name, record in self._tags.items():
             description = record.description.strip().upper()
@@ -131,13 +179,30 @@ class AppController:
             descriptions_to_tags.setdefault(description, []).append(tag_name)
 
         recalculated: set[str] = set()
+        peers_map: dict[str, list[str]] = {}
+        group_map: dict[str, int] = {}
+        group_id = 0
+
         for tag_names in descriptions_to_tags.values():
-            if len(tag_names) > 1:
-                recalculated.update(tag_names)
+            if len(tag_names) <= 1:
+                continue
+            group_id += 1
+            sorted_tags = sorted(tag_names)
+            recalculated.update(sorted_tags)
+            for tag_name in sorted_tags:
+                group_map[tag_name] = group_id
+                peers_map[tag_name] = [peer for peer in sorted_tags if peer != tag_name]
 
         if self._conflicted_tags:
             recalculated.update(self._conflicted_tags)
+
         self._conflicted_tags = recalculated
+        self._tag_conflict_peers = {
+            tag: peers_map[tag] for tag in recalculated if tag in peers_map
+        }
+        self._tag_conflict_group = {
+            tag: group_map[tag] for tag in recalculated if tag in group_map
+        }
         self._window.set_conflict_count(len(self._conflicted_tags))
 
     def import_spreadsheet(self) -> None:
