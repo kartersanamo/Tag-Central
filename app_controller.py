@@ -241,7 +241,7 @@ class AppController:
         last_index = 0
         for match in pattern.finditer(text):
             parts.append(text[last_index : match.start()])
-            parts.append(f"⟦{match.group()}⟧")
+            parts.append(f"[{match.group()}]")
             last_index = match.end()
         parts.append(text[last_index:])
         return "".join(parts)
