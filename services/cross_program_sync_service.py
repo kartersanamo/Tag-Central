@@ -62,6 +62,13 @@ class CimplicityImportSummary:
     proficy_exports_queued: int = 0
     manual_cimplicity_flags: int = 0
     actionable: list[CimplicitySyncAction] = field(default_factory=list)
+    matched_exact_id: int = 0
+    matched_cimplicity_pt_id: int = 0
+    matched_address: int = 0
+    matched_alias: int = 0
+    ambiguous_address: int = 0
+    unmatched: int = 0
+    report_lines: list[str] = field(default_factory=list)
 
 
 class CrossProgramSyncService:
@@ -108,6 +115,7 @@ class CrossProgramSyncService:
         summary = CimplicityImportSummary(total_rows=len(rows))
         for row in rows:
             link = self._linker.link_cimplicity_row(tags, row.pt_id, row.address)
+            self._record_link_stat(summary, link)
             if link.ambiguous_tags:
                 summary.actionable.append(
                     CimplicitySyncAction(
@@ -149,7 +157,40 @@ class CrossProgramSyncService:
                     default_action="align_proficy",
                 )
             )
+        summary.report_lines = self._build_report_lines(summary)
         return summary
+
+    @staticmethod
+    def _record_link_stat(summary: CimplicityImportSummary, link: LinkResult) -> None:
+        if link.ambiguous_tags:
+            summary.ambiguous_address += 1
+            return
+        if link.canonical_tag is None:
+            summary.unmatched += 1
+            return
+        method = link.method or ""
+        if method == "exact_id":
+            summary.matched_exact_id += 1
+        elif method == "cimplicity_pt_id":
+            summary.matched_cimplicity_pt_id += 1
+        elif method == "address":
+            summary.matched_address += 1
+        elif method == "alias":
+            summary.matched_alias += 1
+
+    @staticmethod
+    def _build_report_lines(summary: CimplicityImportSummary) -> list[str]:
+        return [
+            f"Total Cimplicity rows: {summary.total_rows}",
+            f"Matched by PT_ID (exact): {summary.matched_exact_id}",
+            f"Matched by stored Cimplicity PT_ID: {summary.matched_cimplicity_pt_id}",
+            f"Matched by address: {summary.matched_address}",
+            f"Matched by alias + address: {summary.matched_alias}",
+            f"Ambiguous address matches: {summary.ambiguous_address}",
+            f"Unmatched (review queue): {summary.review_queue_added}",
+            f"Already aligned (no resolver): {summary.linked_synced}",
+            f"Needs resolver action: {len(summary.actionable)}",
+        ]
 
     def resolve_tag_key(
         self,

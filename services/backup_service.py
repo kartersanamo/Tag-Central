@@ -7,6 +7,11 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from app_config import (
+    CIMPLICITY_MANUAL_TASKS_FILE,
+    CIMPLICITY_REVIEW_QUEUE_FILE,
+)
+
 
 class BackupService:
     """Creates, lists, previews, and restores CSV backups."""
@@ -50,6 +55,21 @@ class BackupService:
         destination = self._backup_folder / f"{prefix}_{timestamp}.csv"
         shutil.copy2(self._database_file, destination)
         return destination
+
+    def create_bulk_operation_backup(self) -> list[Path]:
+        """Snapshots tags DB and queue JSON files before bulk operations."""
+        written: list[Path] = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if self._database_file.exists():
+            destination = self._backup_folder / f"pre_bulk_{timestamp}_tags.csv"
+            shutil.copy2(self._database_file, destination)
+            written.append(destination)
+        for source in (CIMPLICITY_REVIEW_QUEUE_FILE, CIMPLICITY_MANUAL_TASKS_FILE):
+            if source.exists():
+                destination = self._backup_folder / f"pre_bulk_{timestamp}_{source.name}"
+                shutil.copy2(source, destination)
+                written.append(destination)
+        return written
 
     def create_preload_backup(self) -> Path | None:
         """Creates/overwrites temporary revert backup before restore."""

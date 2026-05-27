@@ -37,6 +37,7 @@ class MainWindow:
         self.backups_button: ttk.Button | None = None
         self.refresh_button: ttk.Button | None = None
         self.export_changes_button: ttk.Button | None = None
+        self.review_export_queue_button: ttk.Button | None = None
         self.add_tag_button: ttk.Button | None = None
         self.find_replace_button: ttk.Button | None = None
         self.find_replace_apply_button: ttk.Button | None = None
@@ -88,12 +89,16 @@ class MainWindow:
         self.add_tag_button = ttk.Button(control_bar, text="Add Tag", width = 6)
         self.find_replace_button = ttk.Button(control_bar, text="Find & Replace ▾")
         self.export_changes_button = ttk.Button(control_bar, text="Export Proficy Changes (0)")
+        self.review_export_queue_button = ttk.Button(
+            control_bar, text="Review Export Queue"
+        )
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
-        
+
         self.import_proficy_button.pack(side="left", padx=(0, 2))
         self.import_cimplicity_button.pack(side="left", padx=2)
         self.refresh_button.pack(side="left", padx=2)
         self.cimplicity_tasks_button.pack(side="left", padx=2)
+        self.review_export_queue_button.pack(side="left", padx=2)
         self.export_changes_button.pack(side="left", padx=2)
         self.cimplicity_review_button.pack(side="left", padx=2)
         self.align_selected_button.pack(side="left", padx=2)
@@ -205,7 +210,10 @@ class MainWindow:
         self.context_menu.add_command(label="Edit Tag")
         self.context_menu.add_command(label="Align to Cimplicity")
         self.context_menu.add_command(label="Jump to Mismatches", state="disabled")
+        self.context_menu.add_command(label="View Tag Diff", state="disabled")
         self.context_menu.add_command(label="Increment descriptions", state="disabled")
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Merge Tags…", state="disabled")
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Add Tag")
         self.context_menu.add_separator()

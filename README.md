@@ -1,126 +1,81 @@
-## Tag Central
+# Tag Central
 
-Tag Central is a desktop application for managing vessel tag data across **Proficy** and **Cimplicity**, keeping a single canonical database, resolving import conflicts safely, and generating Proficy batch export files for re-import.
+Desktop app for managing vessel tags across **Proficy** and **Cimplicity**. One canonical database (`tags.csv`), Proficy batch export for re-import, and Cimplicity manual task tracking when HMI edits are required.
 
-Cimplicity is treated as the source of truth when linked: changes are applied to the Proficy side (exportable via CSV) so Cimplicity points rarely need manual edits.
+**Policy:** When linked, **Cimplicity is source of truth**; Proficy is updated via export CSV. Avoid bulk re-import of Cimplicity CSV after initial linking.
 
-## Features
-
-- **Import Proficy** spreadsheets (`.csv`, `.xlsx`, `.xls`) with `Name` and `Description`
-- **Import Cimplicity** Shared Name Files (`.csv` with `PT_ID`, `DESC`, `ADDR`)
-- Address-first linking between programs (`%G00479` matches `%G0479`)
-- Configurable tag alias rules (`alias_rules.json`, e.g. `ALM_` ↔ `ALARM_`)
-- Sync status per tag: Synced, Proficy Only, Proficy Drift, Name Mismatch, Needs Align
-- **Sync Dashboard** for drift and alignment overview
-- **Cimplicity Review Queue** for unmatched Cimplicity-only points
-- Proficy batch export via **Export Changes**
-- Optional **Cimplicity manual work report** when a change must be done in Cimplicity
-- Vessel filter, program filter, search, find/replace, conflict view, backups
-
-## Project Structure
-
-| Path | Role |
-|------|------|
-| `main.py` | Application entrypoint |
-| `app_controller.py` | UI orchestration |
-| `models/tag_record.py` | Canonical tag + dual-program fields |
-| `models/program_snapshot.py` | Per-program snapshot metadata |
-| `services/tag_repository.py` | Extended `tags.csv` persistence |
-| `services/spreadsheet_loader.py` | Proficy import |
-| `services/cimplicity_loader.py` | Cimplicity Shared Name File import |
-| `services/address_normalizer.py` | Cross-program address matching |
-| `services/tag_link_service.py` | Link Cimplicity rows to canonical tags |
-| `services/cross_program_sync_service.py` | Cimplicity-wins sync policy |
-| `services/cimplicity_review_queue.py` | Unmatched Cimplicity rows |
-| `services/cimplicity_change_report.py` | Manual Cimplicity work CSV |
-| `services/tag_alias_rules.py` | Prefix alias configuration |
-| `ui/cimplicity_sync_dialog.py` | Bulk Cimplicity sync resolver |
-| `ui/cimplicity_review_dialog.py` | Review queue UI |
-| `ui/sync_dashboard_dialog.py` | Sync health dashboard |
-
-## Requirements
-
-- Python 3.11+ recommended
-- Tkinter (GUI)
-- `pandas`, `openpyxl` (see `requirements.txt`)
+## Quick start
 
 ```bash
 python -m venv myenv
 source myenv/bin/activate
 pip install -r requirements.txt
-```
-
-## Running
-
-```bash
 python main.py
 ```
 
-## Usage
+## Typical workflow
 
-### Proficy import
+1. **Import Proficy** — preview dry-run summary, then apply. Resolve import conflicts if prompted.
+2. **Import Cimplicity** — preview link stats, resolve sync dialog, then review the **link report**.
+3. **Cimplicity Review** — create Proficy tags for unmatched points (queued for export).
+4. **Review Export Queue** — verify pending Proficy rows before export.
+5. **Export Proficy Changes** — write per-vessel batch CSVs; optionally **validate** files.
+6. **Cimplicity Tasks** — complete manual Cimplicity edits and check off tasks.
 
-1. **Import Proficy…** → select spreadsheet → enter vessel name.
-2. Resolve description/tag conflicts in the Proficy conflict dialog if needed.
-3. If a tag is already linked to Cimplicity, Proficy import updates the Proficy snapshot but **does not override** the canonical description (drift is flagged).
+## Main features
 
-### Cimplicity import
+| Feature | Description |
+|--------|-------------|
+| Import Proficy / Cimplicity | Separate imports with **dry-run preview** before apply |
+| Cimplicity link report | Post-import breakdown: match by PT_ID, address, alias, ambiguous, review queue |
+| Export queue inspector | Review, edit, or remove pending Proficy export rows |
+| Export validation | After export, compare CSV to queued Name/Description/Address |
+| Internal mismatches | Filter **View Internal Mismatches**; groups **G** (same description), **A** (same address, different descriptions), **P** (same address + PT_ID prefix family) |
+| Tag diff | Context menu **View Tag Diff** — canonical vs Proficy vs Cimplicity |
+| Merge tags | Select two tags → **Merge Tags…** (one survivor, one Proficy export) |
+| Align / increment | Align to Cimplicity; increment descriptions for **G** groups |
+| Auto-backup | Before large bulk actions (review create/dismiss all, big deletes, large imports) |
+| Backups | Manual backup/restore page |
 
-1. **Import Cimplicity…** → select Shared Name File (e.g. export from Cimplicity 6.x) → enter vessel.
-2. Rows are matched by `PT_ID`, normalized `ADDR`, or alias rules.
-3. Actionable mismatches open the **Cimplicity Sync Resolver** (default: **Align Proficy to Cimplicity**).
-4. Unmatched rows go to **Cimplicity Review** for later Proficy tag creation.
-5. Queued changes appear on **Export Changes** as Proficy batch CSV files.
+## Filters
 
-### Sync & review
+- **Vessel** — membership filter  
+- **Program** — All / Proficy only / Cimplicity only / Needs sync  
+- **Search** — tag, description, address, vessels  
+- **View Internal Mismatches** — auto-sorts by group; restores prior sort when unchecked  
 
-- **Sync Dashboard…** — counts and tabs by sync status; align drift from Proficy to Cimplicity.
-- **Cimplicity Review (N)** — create Proficy tags from queue items or dismiss.
+## Data files
 
-### Filters
+| File | Purpose |
+|------|---------|
+| `tags.csv` | Canonical tag database |
+| `cimplicity_review_queue.json` | Unmatched Cimplicity rows |
+| `cimplicity_manual_tasks.json` | Manual Cimplicity work checklist |
+| `alias_rules.json` | Prefix alias pairs for linking |
+| `exports/` | Proficy batch CSVs |
+| `backups/` | DB and JSON snapshots |
 
-- **Vessel** — filter by vessel membership
-- **Program** — All / Proficy only / Cimplicity only / Needs sync
-- **Search** — text across tag, description, addresses, vessels
+### Proficy import columns
 
-## Data Contract
+Required: `Name`, `Description`. Extra columns kept in `proficy_row_data`.
 
-### Proficy input
+### Cimplicity import columns
 
-- Required: `Name`, `Description`
-- Additional columns preserved in `proficy_row_data` JSON
+Required: `PT_ID`, `DESC`. `ADDR` used for address linking. `##` comment lines skipped.
 
-### Cimplicity input
+### `tags.csv` columns
 
-- Required: `PT_ID`, `DESC`
-- `ADDR` used for linking; comment lines (`##`) are skipped automatically
+`tag_name`, `description`, `vessels`, `proficy_row_data`, `cimplicity_row_data`, `cimplicity_pt_id`, `proficy_name`, `linked_address`, `sync_status`, `link_method`
 
-### Database (`tags.csv`)
+## Sync statuses
 
-| Column | Purpose |
+| Status | Meaning |
 |--------|---------|
-| `tag_name` | Canonical tag (Cimplicity `PT_ID` when linked) |
-| `description` | Canonical description |
-| `vessels` | Semicolon-delimited vessel list |
-| `proficy_row_data` | Proficy export payload (JSON) |
-| `cimplicity_row_data` | Cimplicity row snapshot (JSON) |
-| `cimplicity_pt_id` | Cimplicity point ID |
-| `proficy_name` | Last Proficy `Name` |
-| `linked_address` | Normalized IO address |
-| `sync_status` | Sync state code |
-| `link_method` | How the link was established |
-| `row_data` | Legacy alias of `proficy_row_data` (backward compatible) |
-
-Legacy files with only `row_data` load as Proficy-only tags.
-
-### Exports
-
-- **Proficy:** `exports/<VESSEL>_BATCH_EXPORT.csv` (and `-N` suffix if file exists)
-- **Cimplicity manual:** `exports/<VESSEL>_CIMPLICITY_MANUAL.csv` when flagged during import
-
-## Configuration
-
-`alias_rules.json` — prefix pairs for tag-name matching (e.g. `ALM_` / `ALARM_`).
+| Synced | Canonical matches linked Cimplicity |
+| Proficy Only | No Cimplicity link |
+| Proficy Drift | Description differs from Cimplicity |
+| Name Mismatch | Proficy name ≠ Cimplicity PT_ID |
+| Needs Align | Linked but Proficy not fully aligned |
 
 ## Tests
 
@@ -128,8 +83,21 @@ Legacy files with only `row_data` load as Proficy-only tags.
 myenv/bin/python run_tests.py
 ```
 
-## Troubleshooting
+Includes unit tests and small golden fixtures under `tests/fixtures/`.
 
-- Cimplicity import requires a true Shared Name File CSV (not Proficy format).
-- If addresses do not link, check `ADDR` / `IOAddress` and review alias rules.
-- Restart the app after code updates if an old process is still running.
+## Project layout
+
+| Path | Role |
+|------|------|
+| `main.py` | Entry point |
+| `app_controller.py` | UI orchestration |
+| `services/cross_program_sync_service.py` | Cimplicity-wins sync |
+| `services/export_queue_service.py` | Pending Proficy export queue |
+| `services/internal_mismatch_service.py` | G/A/P mismatch groups |
+| `services/proficy_import_analyzer.py` | Proficy dry-run |
+| `services/tag_merge_service.py` | Merge two tags |
+| `services/export_validation_service.py` | Post-export CSV check |
+| `ui/export_queue_dialog.py` | Export queue inspector |
+| `ui/import_dry_run_dialog.py` | Import preview |
+| `ui/cimplicity_link_report_dialog.py` | Link report |
+| `ui/tag_diff_dialog.py` | Proficy vs Cimplicity diff |

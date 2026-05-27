@@ -5,10 +5,14 @@ import re
 from tkinter import filedialog, messagebox, simpledialog
 
 from app_config import (
+    ASYNC_TABLE_THRESHOLD,
     BACKUP_FOLDER,
+    BULK_DELETE_BACKUP_THRESHOLD,
+    BULK_IMPORT_BACKUP_THRESHOLD,
     CONFLICT_GROUP_COLORS,
     DATABASE_FILE,
     EXPORT_FOLDER,
+    PERSIST_DEBOUNCE_MS,
     SYNC_STATUS_LABELS,
 )
 from models.tag_record import (
@@ -30,10 +34,19 @@ from services.cross_program_sync_service import (
     normalize_description,
 )
 from services.description_suggester import DescriptionSuggester
+from services.export_queue_service import ExportQueueService
 from services.export_service import ExportService
+from services.export_validation_service import ExportValidationService
+from services.internal_mismatch_service import (
+    MISMATCH_DUPLICATE_DESCRIPTION,
+    InternalMismatchService,
+)
+from services.proficy_import_analyzer import ProficyImportAnalyzer
 from services.spreadsheet_loader import SpreadsheetLoader
+from services.tag_merge_service import TagMergeService
 from services.tag_repository import TagRepository
 from services.tag_sync_service import TagSyncService
+from services.ui_worker import UiWorker
 from ui.backups_dialog import BackupsDialog
 from ui.add_tag_dialog import AddTagDialog
 from ui.cimplicity_review_dialog import CimplicityReviewDialog
@@ -43,7 +56,13 @@ from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
 from ui.loading_dialog import LoadingDialog
 from ui.main_window import MainWindow
+from ui.cimplicity_link_report_dialog import CimplicityLinkReportDialog
+from ui.export_queue_dialog import ExportQueueDialog
+from ui.export_validation_dialog import ExportValidationDialog
+from ui.import_dry_run_dialog import ImportDryRunDialog
+from ui.merge_tags_dialog import MergeTagsDialog
 from ui.missing_description_dialog import MissingDescriptionDialog
+from ui.tag_diff_dialog import TagDiffDialog
 
 
 class AppController:
@@ -65,9 +84,18 @@ class AppController:
         self._active_vessel_filter: str | None = None
         self._conflicted_tags: set[str] = set()
         self._tag_conflict_peers: dict[str, list[str]] = {}
-        self._tag_conflict_group: dict[str, int] = {}
+        self._tag_mismatch_group_label: dict[str, str] = {}
+        self._tag_mismatch_type: dict[str, str] = {}
         self._view_conflict_session_tags: set[str] = set()
-        self._pending_changes: dict[str, list[dict[str, object]]] = {}
+        self._export_queue = ExportQueueService()
+        self._export_validator = ExportValidationService()
+        self._mismatch_service = InternalMismatchService()
+        self._proficy_analyzer = ProficyImportAnalyzer(self._sync)
+        self._merge_service = TagMergeService()
+        self._ui_worker = UiWorker(root)
+        self._persist_after_id: str | None = None
+        self._refresh_generation = 0
+        self._last_cimplicity_link_report: list[str] = []
         self._sort_column = "tag_name"
         self._sort_descending = False
         self._sort_before_internal_mismatches: tuple[str, bool] | None = None
@@ -109,6 +137,7 @@ class AppController:
         assert self._window.find_replace_apply_button and self._window.find_replace_clear_button
         assert self._window.find_scope_combo
         assert self._window.export_changes_button
+        assert self._window.review_export_queue_button
         assert self._window.change_tag_button and self._window.vessel_combo
         assert self._window.tree and self._window.context_menu
 
@@ -127,6 +156,9 @@ class AppController:
         self._window.find_replace_apply_button.configure(command=self.apply_inline_find_replace)
         self._window.find_replace_clear_button.configure(command=self.clear_inline_find_replace)
         self._window.export_changes_button.configure(command=self.export_pending_changes)
+        self._window.review_export_queue_button.configure(
+            command=self.open_export_queue_inspector
+        )
         self._window.reset_filter_button.configure(command=self.reset_vessel_filter)
         self._window.change_tag_button.configure(command=self.edit_selected_tag)
 
@@ -155,11 +187,13 @@ class AppController:
         self._window.context_menu.entryconfigure(
             2, command=self.jump_to_selected_mismatches
         )
+        self._window.context_menu.entryconfigure(3, command=self.view_selected_tag_diff)
         self._window.context_menu.entryconfigure(
-            3, command=self.increment_selected_descriptions
+            4, command=self.increment_selected_descriptions
         )
-        self._window.context_menu.entryconfigure(5, command=self.add_new_tag)
-        self._window.context_menu.entryconfigure(7, command=self.delete_selected_tags)
+        self._window.context_menu.entryconfigure(6, command=self.merge_selected_tags)
+        self._window.context_menu.entryconfigure(8, command=self.add_new_tag)
+        self._window.context_menu.entryconfigure(10, command=self.delete_selected_tags)
         self._refresh_tree_heading_sort_markers()
 
     def _on_tree_heading_click(self, column_name: str) -> None:
@@ -184,7 +218,7 @@ class AppController:
 
         def sort_key(item: tuple[str, TagRecord]) -> tuple[object, str]:
             tag_name, record = item
-            group_id = self._tag_conflict_group.get(tag_name)
+            group_label = self._tag_mismatch_group_label.get(tag_name, "")
             peers = self._tag_conflict_peers.get(tag_name, [])
 
             value_map: dict[str, object] = {
@@ -195,7 +229,7 @@ class AppController:
                 "description": record.description,
                 "address": self._record_address(record),
                 "sync_status": self._sync_status_label(record.sync_status),
-                "conflict_group": group_id if group_id is not None else 999999,
+                "conflict_group": group_label or "zzz",
                 "conflicts_with": ", ".join(peers),
                 "vessels": ", ".join(sorted(record.vessels)),
             }
@@ -225,12 +259,29 @@ class AppController:
             align_label = f"Align {selected_count} tags to Cimplicity"
             delete_label = f"Delete {selected_count} tags"
         self._window.context_menu.entryconfigure(1, label=align_label)
-        self._window.context_menu.entryconfigure(7, label=delete_label)
+        self._window.context_menu.entryconfigure(10, label=delete_label)
 
         jump_candidates = self._selected_mismatch_group_tags(selection)
         can_jump = len(jump_candidates) > 1
         self._window.context_menu.entryconfigure(
             2, state="normal" if can_jump else "disabled"
+        )
+
+        can_diff = (
+            len(selection) == 1
+            and selection[0] in self._tags
+            and (
+                self._tags[selection[0]].cimplicity_pt_id
+                or self._tags[selection[0]].proficy_row_data
+            )
+        )
+        self._window.context_menu.entryconfigure(
+            3, state="normal" if can_diff else "disabled"
+        )
+
+        can_merge = len(selection) == 2 and all(tag in self._tags for tag in selection)
+        self._window.context_menu.entryconfigure(
+            6, state="normal" if can_merge else "disabled"
         )
 
         can_increment = self._can_increment_descriptions(selection)
@@ -245,7 +296,7 @@ class AppController:
             increment_label = "Increment descriptions"
             increment_state = "disabled"
         self._window.context_menu.entryconfigure(
-            3, label=increment_label, state=increment_state
+            4, label=increment_label, state=increment_state
         )
         self._window.context_menu.post(event.x_root, event.y_root)
 
@@ -253,13 +304,53 @@ class AppController:
         """Returns sorted tags in the clicked/selected mismatch group."""
         if not tag_names:
             return []
-        group_id = self._tag_conflict_group.get(tag_names[0])
-        if group_id is None:
+        group_label = self._tag_mismatch_group_label.get(tag_names[0])
+        if not group_label:
             return []
         return sorted(
             tag_name
             for tag_name in self._conflicted_tags
-            if self._tag_conflict_group.get(tag_name) == group_id
+            if self._tag_mismatch_group_label.get(tag_name) == group_label
+        )
+
+    def view_selected_tag_diff(self) -> None:
+        selection = self._get_selected_tag_names()
+        if len(selection) != 1:
+            return
+        record = self._tags.get(selection[0])
+        if record is None:
+            return
+        TagDiffDialog(self._window.root, record)
+
+    def merge_selected_tags(self) -> None:
+        selection = self._get_selected_tag_names()
+        if len(selection) != 2:
+            messagebox.showinfo("Merge Tags", "Select exactly two tags to merge.")
+            return
+        tag_a, tag_b = selection[0], selection[1]
+        survivor = MergeTagsDialog(self._window.root, tag_a, tag_b).show()
+        if survivor is None:
+            return
+        secondary = tag_b if survivor == tag_a else tag_a
+        try:
+            record = self._merge_service.merge_tags(self._tags, survivor, secondary)
+        except KeyError as error:
+            messagebox.showerror("Merge Failed", str(error))
+            return
+        export_row = record.proficy_export_row()
+        for vessel in record.vessels or {"GLOBAL"}:
+            self._queue_change(vessel=vessel, row_data=export_row)
+        self._persist_tags()
+        self._recalculate_conflicted_tags()
+        self._refresh_filter_values()
+        self.refresh_table()
+        messagebox.showinfo("Merge Complete", f"Merged into '{survivor}'.")
+
+    def open_export_queue_inspector(self) -> None:
+        ExportQueueDialog(
+            self._window.root,
+            self._export_queue,
+            on_change=self._update_pending_change_indicator,
         )
 
     def jump_to_selected_mismatches(self) -> None:
@@ -328,19 +419,21 @@ class AppController:
         return re.sub(r" \d+$", "", trimmed)
 
     def _can_increment_descriptions(self, tag_names: list[str]) -> bool:
-        """True when mismatch view is on and all selected tags share one group."""
+        """True when mismatch view is on and all selected share a description group."""
         if not self._window.view_conflicts_var.get():
             return False
         if len(tag_names) < 2:
             return False
 
-        group_ids: set[int] = set()
+        group_labels: set[str] = set()
         for tag_name in tag_names:
-            group_id = self._tag_conflict_group.get(tag_name)
-            if group_id is None:
+            if self._tag_mismatch_type.get(tag_name) != MISMATCH_DUPLICATE_DESCRIPTION:
                 return False
-            group_ids.add(group_id)
-        return len(group_ids) == 1
+            label = self._tag_mismatch_group_label.get(tag_name)
+            if not label or not label.startswith("G"):
+                return False
+            group_labels.add(label)
+        return len(group_labels) == 1
 
     def increment_selected_descriptions(self) -> None:
         """Assigns '{base} 1', '{base} 2', ... to tags in one internal mismatch group."""
@@ -440,7 +533,29 @@ class AppController:
 
     def _persist_tags(self) -> None:
         """Persists current in-memory table to tags.csv."""
+        if self._persist_after_id is not None:
+            self._window.root.after_cancel(self._persist_after_id)
+            self._persist_after_id = None
         self._repository.save(self._tags)
+
+    def _schedule_persist(self) -> None:
+        """Debounces database writes during rapid bulk edits."""
+        if self._persist_after_id is not None:
+            self._window.root.after_cancel(self._persist_after_id)
+        self._persist_after_id = self._window.root.after(
+            PERSIST_DEBOUNCE_MS, self._flush_scheduled_persist
+        )
+
+    def _flush_scheduled_persist(self) -> None:
+        self._persist_after_id = None
+        self._repository.save(self._tags)
+
+    def _auto_backup_before_bulk(self, reason: str) -> None:
+        paths = self._backup_service.create_bulk_operation_backup()
+        if paths:
+            self._window.status_var.set(
+                f"Auto-backup ({reason}): {paths[0].name}"
+            )
 
     def refresh_from_disk(self) -> None:
         """Reloads the current database state from disk and refreshes UI."""
@@ -504,7 +619,7 @@ class AppController:
             messagebox.showinfo("Find & Replace", "No matching rows were changed.")
             return
 
-        self._persist_tags()
+        self._schedule_persist()
         self._refresh_filter_values()
         self.refresh_table()
         messagebox.showinfo(
@@ -711,15 +826,15 @@ class AppController:
         return True
 
     def _update_pending_change_indicator(self) -> None:
-        total = sum(len(changes) for changes in self._pending_changes.values())
-        self._window.set_pending_change_count(total)
+        self._window.set_pending_change_count(self._export_queue.count())
 
     def _queue_change(
         self,
         vessel: str,
         row_data: dict[str, str],
+        baseline: dict[str, str] | None = None,
     ) -> None:
-        self._pending_changes.setdefault(vessel, []).append({"row": dict(row_data)})
+        self._export_queue.add(vessel, row_data, baseline=baseline)
         self._update_pending_change_indicator()
 
     def _queue_change_if_different(
@@ -729,10 +844,8 @@ class AppController:
         updated_row: dict[str, str],
     ) -> None:
         """Queues export only when Name, Description, or address actually changed."""
-        if self._export_fields_for_compare(original_row) != self._export_fields_for_compare(
-            updated_row
-        ):
-            self._queue_change(vessel=vessel, row_data=updated_row)
+        if self._export_queue.add_if_different(vessel, original_row, updated_row):
+            self._update_pending_change_indicator()
 
     @staticmethod
     def _export_fields_for_compare(row: dict[str, str]) -> dict[str, str]:
@@ -888,6 +1001,9 @@ class AppController:
         if not queue_items:
             return
 
+        if len(queue_items) >= BULK_DELETE_BACKUP_THRESHOLD:
+            self._auto_backup_before_bulk("cimplicity_review_create")
+
         loading = LoadingDialog(self._window.root, title="Creating Proficy Tags...")
         loading.show(f"Creating {len(queue_items)} Proficy tag(s)...")
         try:
@@ -968,6 +1084,9 @@ class AppController:
         queue_items = [item for item in items if isinstance(item, ReviewQueueItem)]
         if not queue_items:
             return
+
+        if len(queue_items) >= BULK_DELETE_BACKUP_THRESHOLD:
+            self._auto_backup_before_bulk("cimplicity_review_dismiss")
 
         if len(queue_items) > 25:
             loading = LoadingDialog(self._window.root, title="Dismissing Review Items...")
@@ -1065,8 +1184,188 @@ class AppController:
 
         self._sort_rows(rows_to_show)
 
+        if len(self._tags) >= ASYNC_TABLE_THRESHOLD:
+            self._refresh_generation += 1
+            generation = self._refresh_generation
+            snapshot = self._table_refresh_snapshot(
+                rows_to_show=rows_to_show,
+                preview_map=preview_map,
+                use_live_preview=use_live_preview,
+                find_text=find_text,
+                find_scope=find_scope,
+                find_match_count=find_match_count,
+                preview_changes=preview_changes,
+                replace_text=replace_text,
+                preview_on=preview_on,
+                view_conflicts_only=view_conflicts_only,
+            )
+
+            def work() -> list[dict[str, object]]:
+                return self._build_table_row_payloads(snapshot)
+
+            def on_success(payloads: list[dict[str, object]]) -> None:
+                if generation != self._refresh_generation:
+                    return
+                self._apply_table_row_payloads(payloads, snapshot)
+
+            self._ui_worker.submit(work, on_success)
+            return
+
+        self._render_table_rows(
+            rows_to_show=rows_to_show,
+            preview_map=preview_map,
+            use_live_preview=use_live_preview,
+            find_text=find_text,
+            find_scope=find_scope,
+            find_match_count=find_match_count,
+            preview_changes=preview_changes,
+            replace_text=replace_text,
+            preview_on=preview_on,
+            view_conflicts_only=view_conflicts_only,
+        )
+
+    def _table_refresh_snapshot(
+        self,
+        *,
+        rows_to_show: list[tuple[str, TagRecord]],
+        preview_map: dict[str, tuple[str, str]],
+        use_live_preview: bool,
+        find_text: str,
+        find_scope: str,
+        find_match_count: int,
+        preview_changes: int,
+        replace_text: str,
+        preview_on: bool,
+        view_conflicts_only: bool,
+    ) -> dict[str, object]:
+        return {
+            "rows_to_show": rows_to_show,
+            "preview_map": preview_map,
+            "use_live_preview": use_live_preview,
+            "find_text": find_text,
+            "find_scope": find_scope,
+            "find_match_count": find_match_count,
+            "preview_changes": preview_changes,
+            "replace_text": replace_text,
+            "preview_on": preview_on,
+            "view_conflicts_only": view_conflicts_only,
+            "peers": dict(self._tag_conflict_peers),
+            "group_labels": dict(self._tag_mismatch_group_label),
+        }
+
+    def _build_table_row_payloads(
+        self, snapshot: dict[str, object]
+    ) -> list[dict[str, object]]:
+        rows_to_show: list[tuple[str, TagRecord]] = snapshot["rows_to_show"]  # type: ignore[assignment]
+        preview_map: dict[str, tuple[str, str]] = snapshot["preview_map"]  # type: ignore[assignment]
+        use_live_preview = bool(snapshot["use_live_preview"])
+        find_text = str(snapshot["find_text"])
+        find_scope = str(snapshot["find_scope"])
+        peers = snapshot["peers"]  # type: ignore[assignment]
+        group_labels = snapshot["group_labels"]  # type: ignore[assignment]
+        payloads: list[dict[str, object]] = []
+        for row_number, (tag_name, record) in enumerate(rows_to_show, start=1):
+            if use_live_preview:
+                row_tag, row_description = preview_map[tag_name]
+            else:
+                row_tag = record.tag_name
+                row_description = record.description
+            display_tag, display_description = self._format_find_replace_display(
+                row_tag, row_description, find_text, find_scope, highlight=bool(find_text)
+            )
+            group_label = group_labels.get(tag_name, "")
+            conflicts_with = ", ".join(peers.get(tag_name, []))
+            payloads.append(
+                {
+                    "iid": tag_name,
+                    "row_number": row_number,
+                    "values": (
+                        row_number,
+                        display_tag,
+                        record.proficy_name or "",
+                        record.cimplicity_pt_id or "",
+                        display_description,
+                        self._record_address(record),
+                        self._sync_status_label(record.sync_status),
+                        group_label,
+                        conflicts_with,
+                        ", ".join(sorted(record.vessels)),
+                    ),
+                    "style_tags": self._row_style_tags(
+                        tag_name, record, group_label, bool(find_text)
+                    ),
+                }
+            )
+        return payloads
+
+    def _row_style_tags(
+        self,
+        tag_name: str,
+        record: TagRecord,
+        group_label: str,
+        find_active: bool,
+    ) -> tuple[str, ...]:
+        if group_label:
+            digits = "".join(character for character in group_label if character.isdigit())
+            index = max(int(digits or "1") - 1, 0)
+            color_index = index % len(CONFLICT_GROUP_COLORS)
+            return (f"conflict_g{color_index}",)
+        if record.sync_status in {SYNC_PROFICY_DRIFT, SYNC_NEEDS_ALIGN, "name_mismatch"}:
+            return ("sync_drift",)
+        if find_active:
+            return ("find_match",)
+        return ()
+
+    def _apply_table_row_payloads(
+        self, payloads: list[dict[str, object]], snapshot: dict[str, object]
+    ) -> None:
+        assert self._window.tree
         self._window.tree.delete(*self._window.tree.get_children())
-        visible_groups: set[int] = set()
+        visible_labels: set[str] = set()
+        for payload in payloads:
+            group_label = str(payload["values"][7])  # type: ignore[index]
+            if group_label:
+                visible_labels.add(group_label)
+            self._window.tree.insert(
+                "",
+                "end",
+                iid=str(payload["iid"]),
+                values=payload["values"],
+                tags=payload["style_tags"],
+            )
+        visible_count = len(payloads)
+        if snapshot["view_conflicts_only"]:
+            self._window.status_var.set(
+                f"{visible_count} internal mismatch tags in {len(visible_labels)} groups"
+            )
+        else:
+            self._window.status_var.set(f"{visible_count} tags")
+        self._window.set_find_replace_status(
+            find_active=bool(snapshot["find_text"]),
+            match_count=int(snapshot["find_match_count"]),
+            change_count=int(snapshot["preview_changes"])
+            if snapshot["replace_text"]
+            else 0,
+            preview_on=bool(snapshot["preview_on"]),
+        )
+
+    def _render_table_rows(
+        self,
+        *,
+        rows_to_show: list[tuple[str, TagRecord]],
+        preview_map: dict[str, tuple[str, str]],
+        use_live_preview: bool,
+        find_text: str,
+        find_scope: str,
+        find_match_count: int,
+        preview_changes: int,
+        replace_text: str,
+        preview_on: bool,
+        view_conflicts_only: bool,
+    ) -> None:
+        assert self._window.tree
+        self._window.tree.delete(*self._window.tree.get_children())
+        visible_labels: set[str] = set()
 
         for row_number, (tag_name, record) in enumerate(rows_to_show, start=1):
             if use_live_preview:
@@ -1083,9 +1382,8 @@ class AppController:
                 highlight=bool(find_text),
             )
 
-            group_id = self._tag_conflict_group.get(tag_name)
+            group_label = self._tag_mismatch_group_label.get(tag_name, "")
             peers = self._tag_conflict_peers.get(tag_name, [])
-            group_label = f"G{group_id}" if group_id is not None else ""
             conflicts_with = ", ".join(peers)
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._record_address(record)
@@ -1093,15 +1391,9 @@ class AppController:
             cimplicity_pt = record.cimplicity_pt_id or ""
             sync_label = self._sync_status_label(record.sync_status)
 
-            row_tags: list[str] = []
-            if group_id is not None:
-                color_index = (group_id - 1) % len(CONFLICT_GROUP_COLORS)
-                row_tags.append(f"conflict_g{color_index}")
-                visible_groups.add(group_id)
-            elif record.sync_status in {SYNC_PROFICY_DRIFT, SYNC_NEEDS_ALIGN, "name_mismatch"}:
-                row_tags.append("sync_drift")
-            elif find_text:
-                row_tags.append("find_match")
+            row_tags = self._row_style_tags(tag_name, record, group_label, bool(find_text))
+            if group_label:
+                visible_labels.add(group_label)
 
             self._window.tree.insert(
                 "",
@@ -1119,13 +1411,13 @@ class AppController:
                     conflicts_with,
                     vessels_text,
                 ),
-                tags=tuple(row_tags),
+                tags=row_tags,
             )
 
         visible_count = len(rows_to_show)
         if view_conflicts_only:
             self._window.status_var.set(
-                f"{visible_count} internal mismatch tags in {len(visible_groups)} groups"
+                f"{visible_count} internal mismatch tags in {len(visible_labels)} groups"
             )
         else:
             self._window.status_var.set(f"{visible_count} tags")
@@ -1137,36 +1429,12 @@ class AppController:
         )
 
     def _recalculate_conflicted_tags(self) -> None:
-        """Builds conflict tag set and peer/group maps from current data."""
-        descriptions_to_tags: dict[str, list[str]] = {}
-        for tag_name, record in self._tags.items():
-            description = record.description.strip().upper()
-            if not description:
-                continue
-            descriptions_to_tags.setdefault(description, []).append(tag_name)
-
-        recalculated: set[str] = set()
-        peers_map: dict[str, list[str]] = {}
-        group_map: dict[str, int] = {}
-        group_id = 0
-
-        for tag_names in descriptions_to_tags.values():
-            if len(tag_names) <= 1:
-                continue
-            group_id += 1
-            sorted_tags = sorted(tag_names)
-            recalculated.update(sorted_tags)
-            for tag_name in sorted_tags:
-                group_map[tag_name] = group_id
-                peers_map[tag_name] = [peer for peer in sorted_tags if peer != tag_name]
-
-        self._conflicted_tags = recalculated
-        self._tag_conflict_peers = {
-            tag: peers_map[tag] for tag in recalculated if tag in peers_map
-        }
-        self._tag_conflict_group = {
-            tag: group_map[tag] for tag in recalculated if tag in group_map
-        }
+        """Builds internal mismatch groups (description, address, prefix)."""
+        result = self._mismatch_service.calculate(self._tags)
+        self._conflicted_tags = result.conflicted_tags
+        self._tag_conflict_peers = result.peers
+        self._tag_mismatch_group_label = result.group_labels
+        self._tag_mismatch_type = result.mismatch_types
         self._window.set_conflict_count(len(self._conflicted_tags))
 
     def import_proficy_spreadsheet(self) -> None:
@@ -1217,6 +1485,18 @@ class AppController:
             "existing_tags_updated": 0,
             "merged_to_existing": 0,
         }
+
+        analysis = self._proficy_analyzer.analyze(self._tags, rows, vessel)
+        dry_lines = analysis.lines + [
+            "",
+            "Note: Proficy import conflicts (if any) are resolved in a second dialog after Apply.",
+        ]
+        if not ImportDryRunDialog(
+            self._window.root, "Proficy Import Preview", dry_lines
+        ).show():
+            return
+        if analysis.estimated_export_rows >= BULK_IMPORT_BACKUP_THRESHOLD:
+            self._auto_backup_before_bulk("proficy_import")
 
         if not self._fill_missing_descriptions(rows, summary):
             return
@@ -1459,6 +1739,21 @@ class AppController:
         finally:
             loading.close()
 
+        dry_lines = list(analysis.report_lines) + [
+            "",
+            f"Estimated review queue additions: {analysis.review_queue_added}",
+            f"Rows needing resolver: {len(analysis.actionable)}",
+            f"Rows already aligned (auto-pass): {analysis.linked_synced}",
+        ]
+        if not ImportDryRunDialog(
+            self._window.root, "Cimplicity Import Preview", dry_lines
+        ).show():
+            return
+        if len(prepared) >= BULK_IMPORT_BACKUP_THRESHOLD:
+            self._auto_backup_before_bulk("cimplicity_import")
+
+        self._last_cimplicity_link_report = list(analysis.report_lines)
+
         summary = {
             "total_rows": len(prepared),
             "linked_synced": 0,
@@ -1621,18 +1916,23 @@ class AppController:
         self.import_proficy_spreadsheet()
 
     def _notify_cimplicity_import_complete(self, summary: dict[str, int]) -> None:
+        apply_lines = [
+            f"Aligned Proficy to Cimplicity: {summary['auto_aligned']}",
+            f"Linked only (still needs align): {summary['linked_synced']}",
+            f"Sent to review queue: {summary['review_queue_added']}",
+            f"Skipped: {summary['skipped']}",
+            f"Proficy exports queued: {summary['proficy_exports_queued']}",
+            f"Manual Cimplicity flags: {summary['manual_cimplicity_flags']}",
+        ]
+        CimplicityLinkReportDialog(
+            self._window.root,
+            self._last_cimplicity_link_report,
+            apply_lines,
+        )
         messagebox.showinfo(
             "Cimplicity Import Complete",
-            "Cimplicity Import Summary\n\n"
-            f"Rows read: {summary['total_rows']}\n"
-            f"Linked only (still needs align): {summary['linked_synced']}\n"
-            f"Aligned Proficy to Cimplicity: {summary['auto_aligned']}\n"
-            f"Sent to review queue: {summary['review_queue_added']}\n"
-            f"Rows needing decisions: {summary['actionable']}\n"
-            f"Skipped: {summary['skipped']}\n"
-            f"Proficy exports queued: {summary['proficy_exports_queued']}\n"
-            f"Manual Cimplicity flags: {summary['manual_cimplicity_flags']}\n\n"
-            "Proficy batch files are generated via Export Changes.",
+            f"Processed {summary['total_rows']} Cimplicity row(s). "
+            "See the link report for details.",
         )
         if self._cimplicity_manual_entries:
             path = self._cimplicity_report.write_report(
@@ -1687,8 +1987,8 @@ class AppController:
         return True
 
     def _notify_import_complete(self, summary: dict[str, int]) -> None:
-        pending_rows = sum(len(changes) for changes in self._pending_changes.values())
-        pending_vessels = len(self._pending_changes)
+        pending_rows = self._export_queue.count()
+        pending_vessels = self._export_queue.vessel_count()
         pending_section = (
             f"Pending batched changes: {pending_rows}\n"
             f"Vessels with pending exports: {pending_vessels}\n\n"
@@ -1928,6 +2228,9 @@ class AppController:
         if not confirmed:
             return
 
+        if len(selected_tags) >= BULK_DELETE_BACKUP_THRESHOLD:
+            self._auto_backup_before_bulk("delete_tags")
+
         loading_delete = LoadingDialog(self._window.root, title="Deleting Tags...")
         loading_delete.show("Deleting selected tags...")
         try:
@@ -1947,7 +2250,8 @@ class AppController:
                         )
                 self._conflicted_tags.discard(tag_name)
                 self._tag_conflict_peers.pop(tag_name, None)
-                self._tag_conflict_group.pop(tag_name, None)
+                self._tag_mismatch_group_label.pop(tag_name, None)
+                self._tag_mismatch_type.pop(tag_name, None)
                 self._view_conflict_session_tags.discard(tag_name)
 
             loading_delete.update_status("Saving deletion changes...")
@@ -1960,16 +2264,18 @@ class AppController:
 
     def export_pending_changes(self) -> bool:
         """Writes all pending vessel batches to export files."""
-        if not self._pending_changes:
+        if self._export_queue.count() == 0:
             messagebox.showinfo("No Pending Changes", "There are no pending changes to export.")
             return True
 
+        snapshot = self._export_queue.all_entries()
+        exports = self._export_queue.to_legacy_exports()
         loading_export = LoadingDialog(self._window.root, title="Exporting Changes...")
         loading_export.show("Writing export batch files...")
         try:
-            written_paths = self._export_service.write_exports(self._pending_changes)
-            pending_count = sum(len(changes) for changes in self._pending_changes.values())
-            self._pending_changes.clear()
+            written_paths = self._export_service.write_exports(exports)
+            pending_count = len(snapshot)
+            self._export_queue.clear()
             self._update_pending_change_indicator()
             rendered_paths = "\n".join(str(path) for path in written_paths)
         finally:
@@ -1978,11 +2284,37 @@ class AppController:
             "Changes Exported",
             f"Exported {pending_count} changes.\n\nFiles:\n{rendered_paths}",
         )
+        if messagebox.askyesno(
+            "Validate Export",
+            "Validate the exported CSV files against the queued changes?",
+        ):
+            self._validate_export_files(written_paths, snapshot)
         return True
+
+    def _validate_export_files(
+        self,
+        paths: list,
+        expected_entries: list,
+    ) -> None:
+        from models.pending_export import PendingExportChange
+
+        by_vessel: dict[str, list[dict[str, str]]] = {}
+        for entry in expected_entries:
+            assert isinstance(entry, PendingExportChange)
+            by_vessel.setdefault(entry.vessel, []).append(dict(entry.row_data))
+
+        results = []
+        for path in paths:
+            vessel_key = str(path.name).split("_BATCH_EXPORT")[0]
+            expected_rows = by_vessel.get(vessel_key, [])
+            results.append(
+                self._export_validator.validate_export_file(path, expected_rows)
+            )
+        ExportValidationDialog(self._window.root, results)
 
     def _handle_app_close(self) -> None:
         """Prevents closing while Proficy exports or Cimplicity manual tasks are pending."""
-        if self._pending_changes and not self._resolve_pending_exports_on_close():
+        if self._export_queue.count() and not self._resolve_pending_exports_on_close():
             return
         if self._manual_tasks.pending_count() and not self._resolve_pending_cimplicity_tasks_on_close():
             return
@@ -1990,7 +2322,7 @@ class AppController:
 
     def _resolve_pending_exports_on_close(self) -> bool:
         """Returns True when there are no pending Proficy export batches left."""
-        if not self._pending_changes:
+        if self._export_queue.count() == 0:
             return True
 
         close_choice = messagebox.askyesnocancel(
@@ -2005,14 +2337,14 @@ class AppController:
 
         if close_choice:
             self.export_pending_changes()
-            return not self._pending_changes
+            return self._export_queue.count() == 0
 
         confirm_abort = messagebox.askyesno(
             "Abort Pending Changes",
             "Abort and discard all pending batched changes?\n\nThis cannot be undone.",
         )
         if confirm_abort:
-            self._pending_changes.clear()
+            self._export_queue.clear()
             self._update_pending_change_indicator()
             return True
         return False
