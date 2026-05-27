@@ -202,6 +202,57 @@ class AppController:
     def _preview_replace(source: str, pattern: re.Pattern[str], replace_text: str) -> str:
         return pattern.sub(replace_text.upper(), source).strip().upper()
 
+    def _build_live_preview_map(
+        self,
+        pattern: re.Pattern[str] | None,
+        replace_text: str,
+        scope: str,
+    ) -> tuple[dict[str, tuple[str, str]], int]:
+        """
+        Builds preview values using the same collision/validation rules as apply.
+        Returns (map[tag_name] -> (preview_tag, preview_description), change_count).
+        """
+        preview_map: dict[str, tuple[str, str]] = {}
+        if pattern is None:
+            for tag_name, record in self._tags.items():
+                preview_map[tag_name] = (record.tag_name, record.description)
+            return preview_map, 0
+
+        taken_tags = set(self._tags.keys())
+        changed_count = 0
+        for tag_name in list(self._tags.keys()):
+            record = self._tags[tag_name]
+            old_tag_name = record.tag_name
+            old_description = record.description
+            new_tag_name = old_tag_name
+            new_description = old_description
+
+            if scope in {"tag", "both"}:
+                new_tag_name = self._preview_replace(old_tag_name, pattern, replace_text)
+            if scope in {"description", "both"}:
+                new_description = self._preview_replace(old_description, pattern, replace_text)
+
+            valid_change = True
+            if not new_tag_name or not new_description:
+                valid_change = False
+            if (
+                valid_change
+                and new_tag_name != old_tag_name
+                and new_tag_name in taken_tags
+            ):
+                valid_change = False
+
+            if valid_change and (new_tag_name != old_tag_name or new_description != old_description):
+                changed_count += 1
+                if new_tag_name != old_tag_name:
+                    taken_tags.discard(old_tag_name)
+                    taken_tags.add(new_tag_name)
+                preview_map[tag_name] = (new_tag_name, new_description)
+            else:
+                preview_map[tag_name] = (old_tag_name, old_description)
+
+        return preview_map, changed_count
+
     def _restore_backup_from_page(self, backup_name: str) -> bool:
         """Loads selected backup after saving temporary pre-load backup."""
         self._persist_tags()
@@ -313,7 +364,9 @@ class AppController:
         preview_pattern = (
             re.compile(re.escape(find_text), flags=re.IGNORECASE) if find_text else None
         )
-        preview_changes = 0
+        preview_map, preview_changes = self._build_live_preview_map(
+            preview_pattern, replace_text, find_scope
+        )
 
         for tag_name, record in self._tags.items():
             if view_conflicts_only and tag_name not in visible_conflict_scope:
@@ -321,21 +374,7 @@ class AppController:
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
 
-            display_tag = record.tag_name
-            display_description = record.description
-            if preview_pattern is not None:
-                new_tag = display_tag
-                new_description = display_description
-                if find_scope in {"tag", "both"}:
-                    new_tag = self._preview_replace(display_tag, preview_pattern, replace_text)
-                if find_scope in {"description", "both"}:
-                    new_description = self._preview_replace(
-                        display_description, preview_pattern, replace_text
-                    )
-                if new_tag != display_tag or new_description != display_description:
-                    preview_changes += 1
-                    display_tag = new_tag
-                    display_description = new_description
+            display_tag, display_description = preview_map[tag_name]
 
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._extract_address(record.row_data)
