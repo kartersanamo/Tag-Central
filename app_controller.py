@@ -162,7 +162,6 @@ class AppController:
                         vessel=vessel,
                         row_data=row_data,
                     )
-                    self._add_export(exports, vessel, imported_tag, imported_tag, row_data)
                     continue
 
                 resolved_conflicts += 1
@@ -192,12 +191,17 @@ class AppController:
                         vessel=vessel,
                         row_data=row_data,
                     )
-                    self._add_export(exports, vessel, imported_tag, imported_tag, row_data)
                     continue
 
                 if action == "use_existing":
                     self._sync.add_vessel_to_existing(self._tags, existing_tag, vessel)
-                    self._add_export(exports, vessel, imported_tag, existing_tag, row_data)
+                    self._add_export_if_changed(
+                        exports,
+                        vessel,
+                        imported_tag,
+                        existing_tag,
+                        row_data,
+                    )
                     continue
 
                 if action == "keep_both":
@@ -209,7 +213,13 @@ class AppController:
                         vessel=vessel,
                         row_data=row_data,
                     )
-                    self._add_export(exports, vessel, imported_tag, new_tag, row_data)
+                    self._add_export_if_changed(
+                        exports,
+                        vessel,
+                        imported_tag,
+                        new_tag,
+                        row_data,
+                    )
         finally:
             if conflict_dialog is not None:
                 conflict_dialog.close()
@@ -250,13 +260,15 @@ class AppController:
         )
 
     @staticmethod
-    def _add_export(
+    def _add_export_if_changed(
         exports: dict[str, list[dict[str, object]]],
         vessel: str,
         old_tag: str,
         new_tag: str,
         row_data: dict[str, str],
     ) -> None:
+        if old_tag == new_tag:
+            return
         exports.setdefault(vessel, []).append(
             {"old_tag": old_tag, "new_tag": new_tag, "row": row_data}
         )
