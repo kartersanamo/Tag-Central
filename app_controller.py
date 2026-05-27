@@ -225,9 +225,15 @@ class AppController:
 
     def refresh_from_disk(self) -> None:
         """Reloads the current database state from disk and refreshes UI."""
-        self._tags = self._repository.load()
-        self._refresh_filter_values()
-        self.refresh_table()
+        loading = LoadingDialog(self._window.root, title="Refreshing...")
+        loading.show("Loading tags database from disk...")
+        try:
+            self._tags = self._repository.load()
+            loading.update_status("Refreshing filters and table...")
+            self._refresh_filter_values()
+            self.refresh_table()
+        finally:
+            loading.close()
         if not self._tags:
             messagebox.showwarning(
                 "Database Missing or Empty",
@@ -450,21 +456,35 @@ class AppController:
 
     def _restore_backup_from_page(self, backup_name: str) -> bool:
         """Loads selected backup after saving temporary pre-load backup."""
-        self._persist_tags()
-        self._backup_service.create_preload_backup()
-        self._backup_service.restore_backup(backup_name)
-        self._tags = self._repository.load()
-        self._refresh_filter_values()
-        self.refresh_table()
+        loading = LoadingDialog(self._window.root, title="Restoring Backup...")
+        loading.show("Saving current state...")
+        try:
+            self._persist_tags()
+            loading.update_status("Creating preload backup...")
+            self._backup_service.create_preload_backup()
+            loading.update_status(f"Restoring backup '{backup_name}'...")
+            self._backup_service.restore_backup(backup_name)
+            loading.update_status("Reloading restored data...")
+            self._tags = self._repository.load()
+            self._refresh_filter_values()
+            self.refresh_table()
+        finally:
+            loading.close()
         return True
 
     def _revert_latest_backup_from_page(self) -> bool:
         """Restores the temporary pre-load backup if available."""
-        if not self._backup_service.restore_preload_backup():
-            return False
-        self._tags = self._repository.load()
-        self._refresh_filter_values()
-        self.refresh_table()
+        loading = LoadingDialog(self._window.root, title="Reverting Backup...")
+        loading.show("Restoring preload backup...")
+        try:
+            if not self._backup_service.restore_preload_backup():
+                return False
+            loading.update_status("Reloading reverted data...")
+            self._tags = self._repository.load()
+            self._refresh_filter_values()
+            self.refresh_table()
+        finally:
+            loading.close()
         return True
 
     def _update_pending_change_indicator(self) -> None:
@@ -574,27 +594,35 @@ class AppController:
 
     def _align_tags_to_cimplicity(self, tag_names: list[str]) -> int:
         aligned_count = 0
-        for tag_name in tag_names:
-            record = self._tags.get(tag_name)
-            if record is None or not record.cimplicity_row_data:
-                continue
-            row = CimplicityImportRow(
-                pt_id=record.cimplicity_pt_id or tag_name,
-                description=normalize_description(record.cimplicity_row_data.get("DESC", "")),
-                address=record.linked_address,
-                row_data=dict(record.cimplicity_row_data),
-                row_index=0,
-            )
-            export_row = self._cross_program.align_proficy_to_cimplicity(
-                self._tags, tag_name, row, next(iter(record.vessels), "GLOBAL")
-            )
-            if export_row:
-                for vessel in record.vessels or {"GLOBAL"}:
-                    self._queue_change(vessel=vessel, row_data=export_row)
-            aligned_count += 1
-        self._persist_tags()
-        self._update_pending_change_indicator()
-        self.refresh_table()
+        loading = LoadingDialog(self._window.root, title="Aligning to Cimplicity...")
+        loading.show("Aligning selected tags...")
+        try:
+            for index, tag_name in enumerate(tag_names, start=1):
+                if index == 1 or index % 50 == 0:
+                    loading.update_status(f"Aligning tags... {index}/{len(tag_names)}")
+                record = self._tags.get(tag_name)
+                if record is None or not record.cimplicity_row_data:
+                    continue
+                row = CimplicityImportRow(
+                    pt_id=record.cimplicity_pt_id or tag_name,
+                    description=normalize_description(record.cimplicity_row_data.get("DESC", "")),
+                    address=record.linked_address,
+                    row_data=dict(record.cimplicity_row_data),
+                    row_index=0,
+                )
+                export_row = self._cross_program.align_proficy_to_cimplicity(
+                    self._tags, tag_name, row, next(iter(record.vessels), "GLOBAL")
+                )
+                if export_row:
+                    for vessel in record.vessels or {"GLOBAL"}:
+                        self._queue_change(vessel=vessel, row_data=export_row)
+                aligned_count += 1
+            loading.update_status("Saving aligned data...")
+            self._persist_tags()
+            self._update_pending_change_indicator()
+            self.refresh_table()
+        finally:
+            loading.close()
         return aligned_count
 
     def align_selected_to_cimplicity(self) -> None:
@@ -853,13 +881,19 @@ class AppController:
             messagebox.showwarning("Invalid Vessel", "Vessel name cannot be empty.")
             return
 
+        loading_read = LoadingDialog(self._window.root, title="Importing Proficy...")
+        loading_read.show("Loading Proficy spreadsheet...")
         try:
-            rows = self._loader.load_rows(file_path)
-        except Exception as error:
-            messagebox.showerror("Import Error", str(error))
-            return
+            try:
+                rows = self._loader.load_rows(file_path)
+            except Exception as error:
+                messagebox.showerror("Import Error", str(error))
+                return
 
-        original_rows = [dict(row) for row in rows]
+            loading_read.update_status(f"Loaded {len(rows)} rows. Preparing import...")
+            original_rows = [dict(row) for row in rows]
+        finally:
+            loading_read.close()
 
         summary = {
             "total_rows": len(rows),
@@ -882,73 +916,82 @@ class AppController:
         pending_conflicts: list[dict[str, object]] = []
         self._conflicted_tags = set()
 
-        for row_index, row_data in enumerate(rows):
-            imported_tag = row_data.get("Name", "").strip().upper()
-            imported_description = row_data.get("Description", "").strip().upper()
-            if not imported_tag:
-                summary["rows_missing_name"] += 1
-                continue
+        loading_merge = LoadingDialog(self._window.root, title="Importing Proficy...")
+        loading_merge.show("Merging imported rows...")
+        try:
+            for row_index, row_data in enumerate(rows):
+                if row_index == 0 or row_index % 250 == 0:
+                    loading_merge.update_status(f"Merging rows... {row_index + 1}/{len(rows)}")
+                imported_tag = row_data.get("Name", "").strip().upper()
+                imported_description = row_data.get("Description", "").strip().upper()
+                if not imported_tag:
+                    summary["rows_missing_name"] += 1
+                    continue
 
-            existing_same_tag = self._tags.get(imported_tag)
-            before_export = (
-                existing_same_tag.proficy_export_row() if existing_same_tag is not None else None
-            )
-            if (
-                existing_same_tag is not None
-                and existing_same_tag.description == imported_description
-            ):
-                summary["unchanged_matches"] += 1
-
-            conflict = self._sync.find_conflict(
-                self._tags,
-                imported_tag=imported_tag,
-                imported_description=imported_description,
-            )
-
-            if conflict is None:
-                was_new = before_export is None
-                self._cross_program.import_proficy_row(
-                    self._tags,
-                    tag_name=imported_tag,
-                    description=imported_description,
-                    vessel=vessel,
-                    row_data=row_data,
+                existing_same_tag = self._tags.get(imported_tag)
+                before_export = (
+                    existing_same_tag.proficy_export_row()
+                    if existing_same_tag is not None
+                    else None
                 )
-                if was_new:
-                    summary["new_tags_created"] += 1
-                else:
-                    summary["existing_tags_updated"] += 1
-                record = self._tags[imported_tag]
-                after_export = record.proficy_export_row()
-                if was_new:
-                    # Fresh import: queue only if processing changed export fields
-                    # (e.g. filled missing description), not for identical spreadsheet rows.
-                    self._queue_change_if_different(
-                        vessel=vessel,
-                        original_row=original_rows[row_index],
-                        updated_row=after_export,
-                    )
-                elif before_export is not None:
-                    self._queue_change_if_different(
-                        vessel=vessel,
-                        original_row=before_export,
-                        updated_row=after_export,
-                    )
-                continue
+                if (
+                    existing_same_tag is not None
+                    and existing_same_tag.description == imported_description
+                ):
+                    summary["unchanged_matches"] += 1
 
-            summary["conflicts_detected"] += 1
-            existing_tag, existing_record = conflict
-            pending_conflicts.append(
-                {
-                    "imported_tag": imported_tag,
-                    "imported_description": imported_description,
-                    "existing_tag": existing_tag,
-                    "existing_description": existing_record.description,
-                    "row_data": row_data,
-                    "existing_same_tag": existing_same_tag,
-                    "row_index": row_index,
-                }
-            )
+                conflict = self._sync.find_conflict(
+                    self._tags,
+                    imported_tag=imported_tag,
+                    imported_description=imported_description,
+                )
+
+                if conflict is None:
+                    was_new = before_export is None
+                    self._cross_program.import_proficy_row(
+                        self._tags,
+                        tag_name=imported_tag,
+                        description=imported_description,
+                        vessel=vessel,
+                        row_data=row_data,
+                    )
+                    if was_new:
+                        summary["new_tags_created"] += 1
+                    else:
+                        summary["existing_tags_updated"] += 1
+                    record = self._tags[imported_tag]
+                    after_export = record.proficy_export_row()
+                    if was_new:
+                        # Fresh import: queue only if processing changed export fields
+                        # (e.g. filled missing description), not for identical spreadsheet rows.
+                        self._queue_change_if_different(
+                            vessel=vessel,
+                            original_row=original_rows[row_index],
+                            updated_row=after_export,
+                        )
+                    elif before_export is not None:
+                        self._queue_change_if_different(
+                            vessel=vessel,
+                            original_row=before_export,
+                            updated_row=after_export,
+                        )
+                    continue
+
+                summary["conflicts_detected"] += 1
+                existing_tag, existing_record = conflict
+                pending_conflicts.append(
+                    {
+                        "imported_tag": imported_tag,
+                        "imported_description": imported_description,
+                        "existing_tag": existing_tag,
+                        "existing_description": existing_record.description,
+                        "row_data": row_data,
+                        "existing_same_tag": existing_same_tag,
+                        "row_index": row_index,
+                    }
+                )
+        finally:
+            loading_merge.close()
 
         if pending_conflicts:
             conflict_dialog = ConflictDialog(self._window.root)
@@ -970,84 +1013,103 @@ class AppController:
             if decisions is None:
                 return
 
-            for conflict, decision in zip(pending_conflicts, decisions):
-                imported_tag = str(conflict["imported_tag"])
-                imported_description = str(conflict["imported_description"])
-                existing_tag = str(conflict["existing_tag"])
-                row_data = dict(conflict["row_data"])
-                existing_same_tag = conflict["existing_same_tag"]
-                row_index = int(conflict["row_index"])
-                original_row = original_rows[row_index]
-                action = decision.get("action", "skip")
-                if action == "skip":
-                    summary["skipped_by_user"] += 1
-                    continue
+            loading_conflicts = LoadingDialog(
+                self._window.root, title="Applying Proficy Conflict Decisions..."
+            )
+            loading_conflicts.show("Applying conflict decisions...")
+            try:
+                for decision_index, (conflict, decision) in enumerate(
+                    zip(pending_conflicts, decisions), start=1
+                ):
+                    if decision_index == 1 or decision_index % 100 == 0:
+                        loading_conflicts.update_status(
+                            f"Applying decisions... {decision_index}/{len(decisions)}"
+                        )
+                    imported_tag = str(conflict["imported_tag"])
+                    imported_description = str(conflict["imported_description"])
+                    existing_tag = str(conflict["existing_tag"])
+                    row_data = dict(conflict["row_data"])
+                    existing_same_tag = conflict["existing_same_tag"]
+                    row_index = int(conflict["row_index"])
+                    original_row = original_rows[row_index]
+                    action = decision.get("action", "skip")
+                    if action == "skip":
+                        summary["skipped_by_user"] += 1
+                        continue
 
-                if action == "use_imported":
-                    self._sync.add_or_update_imported(
-                        self._tags,
-                        tag_name=imported_tag,
-                        description=imported_description,
-                        vessel=vessel,
-                        row_data=row_data,  # type: ignore[arg-type]
-                    )
-                    summary["resolved_use_imported"] += 1
-                    if existing_same_tag is None:
+                    if action == "use_imported":
+                        self._sync.add_or_update_imported(
+                            self._tags,
+                            tag_name=imported_tag,
+                            description=imported_description,
+                            vessel=vessel,
+                            row_data=row_data,  # type: ignore[arg-type]
+                        )
+                        summary["resolved_use_imported"] += 1
+                        if existing_same_tag is None:
+                            summary["new_tags_created"] += 1
+                        else:
+                            summary["existing_tags_updated"] += 1
+                        updated_row = dict(row_data)
+                        updated_row["Name"] = imported_tag
+                        updated_row["Description"] = imported_description
+                        self._queue_change_if_different(
+                            vessel=vessel,
+                            original_row=original_row,
+                            updated_row=updated_row,
+                        )
+                        self._conflicted_tags.add(imported_tag)
+                        continue
+
+                    if action == "use_existing":
+                        self._sync.add_vessel_to_existing(self._tags, existing_tag, vessel)
+                        summary["resolved_use_existing"] += 1
+                        summary["merged_to_existing"] += 1
+                        updated_row = dict(row_data)  # type: ignore[arg-type]
+                        updated_row["Name"] = existing_tag
+                        updated_row["Description"] = self._tags[existing_tag].description
+                        self._queue_change_if_different(
+                            vessel=vessel,
+                            original_row=original_row,
+                            updated_row=updated_row,
+                        )
+                        self._conflicted_tags.add(existing_tag)
+                        continue
+
+                    if action == "keep_both":
+                        new_tag = self._sync.unique_suffix_name(self._tags, imported_tag)
+                        self._sync.add_or_update_imported(
+                            self._tags,
+                            tag_name=new_tag,
+                            description=imported_description,
+                            vessel=vessel,
+                            row_data=row_data,  # type: ignore[arg-type]
+                        )
+                        summary["resolved_keep_both"] += 1
                         summary["new_tags_created"] += 1
-                    else:
-                        summary["existing_tags_updated"] += 1
-                    updated_row = dict(row_data)
-                    updated_row["Name"] = imported_tag
-                    updated_row["Description"] = imported_description
-                    self._queue_change_if_different(
-                        vessel=vessel,
-                        original_row=original_row,
-                        updated_row=updated_row,
-                    )
-                    self._conflicted_tags.add(imported_tag)
-                    continue
+                        updated_row = dict(row_data)  # type: ignore[arg-type]
+                        updated_row["Name"] = new_tag
+                        updated_row["Description"] = imported_description
+                        self._queue_change_if_different(
+                            vessel=vessel,
+                            original_row=original_row,
+                            updated_row=updated_row,
+                        )
+                        self._conflicted_tags.add(existing_tag)
+                        self._conflicted_tags.add(new_tag)
+            finally:
+                loading_conflicts.close()
 
-                if action == "use_existing":
-                    self._sync.add_vessel_to_existing(self._tags, existing_tag, vessel)
-                    summary["resolved_use_existing"] += 1
-                    summary["merged_to_existing"] += 1
-                    updated_row = dict(row_data)  # type: ignore[arg-type]
-                    updated_row["Name"] = existing_tag
-                    updated_row["Description"] = self._tags[existing_tag].description
-                    self._queue_change_if_different(
-                        vessel=vessel,
-                        original_row=original_row,
-                        updated_row=updated_row,
-                    )
-                    self._conflicted_tags.add(existing_tag)
-                    continue
-
-                if action == "keep_both":
-                    new_tag = self._sync.unique_suffix_name(self._tags, imported_tag)
-                    self._sync.add_or_update_imported(
-                        self._tags,
-                        tag_name=new_tag,
-                        description=imported_description,
-                        vessel=vessel,
-                        row_data=row_data,  # type: ignore[arg-type]
-                    )
-                    summary["resolved_keep_both"] += 1
-                    summary["new_tags_created"] += 1
-                    updated_row = dict(row_data)  # type: ignore[arg-type]
-                    updated_row["Name"] = new_tag
-                    updated_row["Description"] = imported_description
-                    self._queue_change_if_different(
-                        vessel=vessel,
-                        original_row=original_row,
-                        updated_row=updated_row,
-                    )
-                    self._conflicted_tags.add(existing_tag)
-                    self._conflicted_tags.add(new_tag)
-
-        self._persist_tags()
-        self._refresh_filter_values()
-        self.clear_inline_find_replace(refresh=False)
-        self.refresh_table()
+        loading_finalize = LoadingDialog(self._window.root, title="Finalizing Import...")
+        loading_finalize.show("Saving imported data...")
+        try:
+            self._persist_tags()
+            loading_finalize.update_status("Refreshing interface...")
+            self._refresh_filter_values()
+            self.clear_inline_find_replace(refresh=False)
+            self.refresh_table()
+        finally:
+            loading_finalize.close()
         self._notify_import_complete(summary)
 
     def import_cimplicity_spreadsheet(self) -> None:
@@ -1551,26 +1613,34 @@ class AppController:
         if not confirmed:
             return
 
-        for tag_name in selected_tags:
-            record = self._tags.pop(tag_name, None)
-            if record is not None:
-                vessels = record.vessels or {"GLOBAL"}
-                deleted_row = dict(record.row_data)
-                deleted_row["Name"] = ""
-                deleted_row["Description"] = record.description
-                for vessel in vessels:
-                    self._queue_change(
-                        vessel=vessel,
-                        row_data=deleted_row,
-                    )
-            self._conflicted_tags.discard(tag_name)
-            self._tag_conflict_peers.pop(tag_name, None)
-            self._tag_conflict_group.pop(tag_name, None)
-            self._view_conflict_session_tags.discard(tag_name)
+        loading_delete = LoadingDialog(self._window.root, title="Deleting Tags...")
+        loading_delete.show("Deleting selected tags...")
+        try:
+            for index, tag_name in enumerate(selected_tags, start=1):
+                if index == 1 or index % 100 == 0:
+                    loading_delete.update_status(f"Deleting tags... {index}/{len(selected_tags)}")
+                record = self._tags.pop(tag_name, None)
+                if record is not None:
+                    vessels = record.vessels or {"GLOBAL"}
+                    deleted_row = dict(record.row_data)
+                    deleted_row["Name"] = ""
+                    deleted_row["Description"] = record.description
+                    for vessel in vessels:
+                        self._queue_change(
+                            vessel=vessel,
+                            row_data=deleted_row,
+                        )
+                self._conflicted_tags.discard(tag_name)
+                self._tag_conflict_peers.pop(tag_name, None)
+                self._tag_conflict_group.pop(tag_name, None)
+                self._view_conflict_session_tags.discard(tag_name)
 
-        self._persist_tags()
-        self._refresh_filter_values()
-        self.refresh_table()
+            loading_delete.update_status("Saving deletion changes...")
+            self._persist_tags()
+            self._refresh_filter_values()
+            self.refresh_table()
+        finally:
+            loading_delete.close()
         messagebox.showinfo("Deleted", f"Deleted {len(selected_tags)} tag(s).")
 
     def export_pending_changes(self) -> bool:
@@ -1579,11 +1649,16 @@ class AppController:
             messagebox.showinfo("No Pending Changes", "There are no pending changes to export.")
             return True
 
-        written_paths = self._export_service.write_exports(self._pending_changes)
-        pending_count = sum(len(changes) for changes in self._pending_changes.values())
-        self._pending_changes.clear()
-        self._update_pending_change_indicator()
-        rendered_paths = "\n".join(str(path) for path in written_paths)
+        loading_export = LoadingDialog(self._window.root, title="Exporting Changes...")
+        loading_export.show("Writing export batch files...")
+        try:
+            written_paths = self._export_service.write_exports(self._pending_changes)
+            pending_count = sum(len(changes) for changes in self._pending_changes.values())
+            self._pending_changes.clear()
+            self._update_pending_change_indicator()
+            rendered_paths = "\n".join(str(path) for path in written_paths)
+        finally:
+            loading_export.close()
         messagebox.showinfo(
             "Changes Exported",
             f"Exported {pending_count} changes.\n\nFiles:\n{rendered_paths}",
