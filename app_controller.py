@@ -21,6 +21,7 @@ from models.tag_record import (
 from services.backup_service import BackupService
 from services.cimplicity_change_report import CimplicityChangeReport
 from services.cimplicity_loader import CimplicityLoader
+from services.cimplicity_manual_tasks import CimplicityManualTasks
 from services.cross_program_sync_service import (
     CimplicityImportRow,
     CimplicitySyncAction,
@@ -36,6 +37,7 @@ from ui.backups_dialog import BackupsDialog
 from ui.add_tag_dialog import AddTagDialog
 from ui.cimplicity_review_dialog import CimplicityReviewDialog
 from ui.cimplicity_sync_dialog import CimplicitySyncDialog
+from ui.cimplicity_manual_tasks_dialog import CimplicityManualTasksDialog
 from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
 from ui.loading_dialog import LoadingDialog
@@ -56,6 +58,7 @@ class AppController:
         self._sync = TagSyncService()
         self._cross_program = CrossProgramSyncService()
         self._cimplicity_report = CimplicityChangeReport()
+        self._manual_tasks = CimplicityManualTasks()
         self._cimplicity_manual_entries: list[dict[str, str]] = []
         self._tags: dict[str, TagRecord] = self._repository.load()
         self._active_vessel_filter: str | None = None
@@ -85,12 +88,17 @@ class AppController:
         self._recalculate_conflicted_tags()
         self._window.set_pending_change_count(0)
         self._update_review_queue_indicator()
+        self._update_manual_tasks_indicator()
         self._window.root.protocol("WM_DELETE_WINDOW", self._handle_app_close)
         self.refresh_table()
 
     def _bind_events(self) -> None:
         assert self._window.import_proficy_button and self._window.import_cimplicity_button
-        assert self._window.align_selected_button and self._window.cimplicity_review_button
+        assert (
+            self._window.align_selected_button
+            and self._window.cimplicity_review_button
+            and self._window.cimplicity_tasks_button
+        )
         assert self._window.program_filter_combo
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
@@ -106,6 +114,7 @@ class AppController:
         self._window.import_cimplicity_button.configure(command=self.import_cimplicity_spreadsheet)
         self._window.align_selected_button.configure(command=self.align_selected_to_cimplicity)
         self._window.cimplicity_review_button.configure(command=self.open_cimplicity_review)
+        self._window.cimplicity_tasks_button.configure(command=self.open_cimplicity_tasks)
         self._window.import_button.configure(command=self.import_proficy_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
@@ -535,6 +544,9 @@ class AppController:
     def _update_review_queue_indicator(self) -> None:
         self._window.set_review_queue_count(self._cross_program.review_queue.count())
 
+    def _update_manual_tasks_indicator(self) -> None:
+        self._window.set_manual_tasks_count(self._manual_tasks.pending_count())
+
     @staticmethod
     def _sync_status_label(status: str) -> str:
         return SYNC_STATUS_LABELS.get(status, status.replace("_", " ").title())
@@ -608,6 +620,13 @@ class AppController:
             review_queue=self._cross_program.review_queue,
             on_create_proficy=self._create_proficy_from_review_item,
             on_dismiss=self._dismiss_review_item,
+        )
+
+    def open_cimplicity_tasks(self) -> None:
+        CimplicityManualTasksDialog(
+            self._window.root,
+            tasks=self._manual_tasks,
+            on_change=self._update_manual_tasks_indicator,
         )
 
     def _create_proficy_from_review_item(self, item) -> None:
@@ -1330,6 +1349,8 @@ class AppController:
         old_address = self._extract_address(record.row_data)
         old_vessels = set(record.vessels)
         old_row_data = dict(record.row_data)
+        old_sync_status = record.sync_status
+        old_cimplicity_pt_id = record.cimplicity_pt_id
 
         edited = EditTagDialog(
             self._window.root,
@@ -1390,6 +1411,37 @@ class AppController:
                     vessel=vessel,
                     row_data=updated_row,
                 )
+
+        if old_sync_status == SYNC_SYNCED and old_cimplicity_pt_id:
+            task_vessel = next(iter(new_vessels or old_vessels or {"GLOBAL"}))
+            if old_tag != new_tag:
+                self._manual_tasks.add_task(
+                    vessel=task_vessel,
+                    tag_name=old_cimplicity_pt_id,
+                    field="tag_name",
+                    old_value=old_tag,
+                    new_value=new_tag,
+                    reason="Manual edit on synced tag requires Cimplicity update",
+                )
+            if old_description != new_description:
+                self._manual_tasks.add_task(
+                    vessel=task_vessel,
+                    tag_name=old_cimplicity_pt_id,
+                    field="description",
+                    old_value=old_description,
+                    new_value=new_description,
+                    reason="Manual edit on synced tag requires Cimplicity update",
+                )
+            if old_address != new_address:
+                self._manual_tasks.add_task(
+                    vessel=task_vessel,
+                    tag_name=old_cimplicity_pt_id,
+                    field="address",
+                    old_value=old_address,
+                    new_value=new_address,
+                    reason="Manual edit on synced tag requires Cimplicity update",
+                )
+            self._update_manual_tasks_indicator()
 
         self._refresh_filter_values()
         self.refresh_table()

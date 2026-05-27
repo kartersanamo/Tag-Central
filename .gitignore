@@ -5,3 +5,4 @@ __pycache__/
 exports/*
 backups/*
 cimplicity_review_queue.json
+cimplicity_manual_tasks.json

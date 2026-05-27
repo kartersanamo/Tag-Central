@@ -13,6 +13,7 @@ BACKUP_FOLDER = PROJECT_ROOT / "backups"
 ALIAS_RULES_FILE = PROJECT_ROOT / "alias_rules.json"
 CIMPLICITY_REVIEW_QUEUE_FILE = PROJECT_ROOT / "cimplicity_review_queue.json"
 CIMPLICITY_MANUAL_REPORT_FILE = PROJECT_ROOT / "cimplicity_manual_report.json"
+CIMPLICITY_MANUAL_TASKS_FILE = PROJECT_ROOT / "cimplicity_manual_tasks.json"
 
 DEFAULT_TABLE_COLUMNS = (
     "row_number",
