@@ -18,12 +18,19 @@ class MainWindow:
         self.view_conflicts_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="0 tags")
         self.view_conflicts_check: ttk.Checkbutton | None = None
+        self.find_text_var = tk.StringVar()
+        self.replace_text_var = tk.StringVar()
+        self.find_scope_var = tk.StringVar(value="both")
+        self.find_replace_status_var = tk.StringVar(value="Live preview: 0 changes")
 
         self.import_button: ttk.Button | None = None
         self.backups_button: ttk.Button | None = None
         self.refresh_button: ttk.Button | None = None
         self.export_changes_button: ttk.Button | None = None
         self.find_replace_button: ttk.Button | None = None
+        self.find_replace_apply_button: ttk.Button | None = None
+        self.find_replace_clear_button: ttk.Button | None = None
+        self.find_scope_combo: ttk.Combobox | None = None
         self.reset_filter_button: ttk.Button | None = None
         self.change_tag_button: ttk.Button | None = None
         self.vessel_combo: ttk.Combobox | None = None
@@ -69,6 +76,33 @@ class MainWindow:
         self.find_replace_button.pack(side="left", padx=8)
         self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)
+
+        find_bar = ttk.LabelFrame(main, text="Find & Replace (Live Preview)", padding=10)
+        find_bar.pack(fill="x", pady=(10, 8))
+        ttk.Label(find_bar, text="Find").pack(side="left", padx=(0, 6))
+        ttk.Entry(find_bar, textvariable=self.find_text_var, width=28).pack(
+            side="left", padx=(0, 10)
+        )
+        ttk.Label(find_bar, text="Replace").pack(side="left", padx=(0, 6))
+        ttk.Entry(find_bar, textvariable=self.replace_text_var, width=28).pack(
+            side="left", padx=(0, 10)
+        )
+        ttk.Label(find_bar, text="Scope").pack(side="left", padx=(0, 6))
+        self.find_scope_combo = ttk.Combobox(
+            find_bar,
+            textvariable=self.find_scope_var,
+            values=("tag", "description", "both"),
+            state="readonly",
+            width=14,
+        )
+        self.find_scope_combo.pack(side="left", padx=(0, 10))
+        self.find_replace_apply_button = ttk.Button(find_bar, text="Apply")
+        self.find_replace_apply_button.pack(side="left", padx=(0, 8))
+        self.find_replace_clear_button = ttk.Button(find_bar, text="Clear")
+        self.find_replace_clear_button.pack(side="left", padx=(0, 8))
+        ttk.Label(find_bar, textvariable=self.find_replace_status_var).pack(
+            side="right", padx=(10, 0)
+        )
 
         filter_bar = ttk.Frame(main)
         filter_bar.pack(fill="x", pady=(12, 10))
@@ -140,3 +174,7 @@ class MainWindow:
             self.export_changes_button.configure(style="ExportPending.TButton")
         else:
             self.export_changes_button.configure(style="TButton")
+
+    def set_find_replace_preview_count(self, count: int) -> None:
+        """Updates status label for live preview changes."""
+        self.find_replace_status_var.set(f"Live preview: {count} changes")

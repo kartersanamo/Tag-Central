@@ -15,7 +15,6 @@ from services.tag_sync_service import TagSyncService
 from ui.backups_dialog import BackupsDialog
 from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
-from ui.find_replace_dialog import FindReplaceDialog
 from ui.main_window import MainWindow
 from ui.missing_description_dialog import MissingDescriptionDialog
 
@@ -50,6 +49,8 @@ class AppController:
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
         assert self._window.find_replace_button
+        assert self._window.find_replace_apply_button and self._window.find_replace_clear_button
+        assert self._window.find_scope_combo
         assert self._window.export_changes_button
         assert self._window.change_tag_button and self._window.vessel_combo
         assert self._window.tree and self._window.context_menu
@@ -57,12 +58,17 @@ class AppController:
         self._window.import_button.configure(command=self.import_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
-        self._window.find_replace_button.configure(command=self.open_find_replace)
+        self._window.find_replace_button.configure(command=lambda: None)
+        self._window.find_replace_apply_button.configure(command=self.apply_inline_find_replace)
+        self._window.find_replace_clear_button.configure(command=self.clear_inline_find_replace)
         self._window.export_changes_button.configure(command=self.export_pending_changes)
         self._window.reset_filter_button.configure(command=self.reset_vessel_filter)
         self._window.change_tag_button.configure(command=self.edit_selected_tag)
 
         self._window.search_var.trace_add("write", lambda *_: self.refresh_table())
+        self._window.find_text_var.trace_add("write", lambda *_: self.refresh_table())
+        self._window.replace_text_var.trace_add("write", lambda *_: self.refresh_table())
+        self._window.find_scope_var.trace_add("write", lambda *_: self.refresh_table())
         self._window.view_conflicts_var.trace_add(
             "write", lambda *_: self._on_view_conflicts_toggle()
         )
@@ -115,15 +121,11 @@ class AppController:
             on_revert_latest=self._revert_latest_backup_from_page,
         ).show()
 
-    def open_find_replace(self) -> None:
-        """Opens find/replace dialog and applies operation."""
-        payload = FindReplaceDialog(self._window.root).show()
-        if payload is None:
-            return
-
-        find_text = payload["find_text"].strip()
-        replace_text = payload["replace_text"]
-        scope = payload["scope"]
+    def apply_inline_find_replace(self) -> None:
+        """Applies in-app find/replace from inline controls."""
+        find_text = self._window.find_text_var.get().strip()
+        replace_text = self._window.replace_text_var.get()
+        scope = self._window.find_scope_var.get()
         if not find_text:
             messagebox.showwarning("Invalid Input", "Find text cannot be empty.")
             return
@@ -140,6 +142,13 @@ class AppController:
             "Find & Replace Complete",
             f"Updated {changed_count} tag(s). Changes were autosaved and batched for export.",
         )
+
+    def clear_inline_find_replace(self) -> None:
+        """Clears inline find/replace inputs."""
+        self._window.find_text_var.set("")
+        self._window.replace_text_var.set("")
+        self._window.find_scope_var.set("both")
+        self.refresh_table()
 
     def _apply_find_replace(self, find_text: str, replace_text: str, scope: str) -> int:
         """Applies text replacement and returns number of changed tags."""
@@ -188,6 +197,10 @@ class AppController:
             changed_tags += 1
 
         return changed_tags
+
+    @staticmethod
+    def _preview_replace(source: str, pattern: re.Pattern[str], replace_text: str) -> str:
+        return pattern.sub(replace_text.upper(), source).strip().upper()
 
     def _restore_backup_from_page(self, backup_name: str) -> bool:
         """Loads selected backup after saving temporary pre-load backup."""
@@ -294,17 +307,41 @@ class AppController:
             visible_conflict_scope = self._conflicted_tags
 
         rows_to_show: list[tuple[str, TagRecord]] = []
+        find_text = self._window.find_text_var.get().strip()
+        replace_text = self._window.replace_text_var.get()
+        find_scope = self._window.find_scope_var.get()
+        preview_pattern = (
+            re.compile(re.escape(find_text), flags=re.IGNORECASE) if find_text else None
+        )
+        preview_changes = 0
+
         for tag_name, record in self._tags.items():
             if view_conflicts_only and tag_name not in visible_conflict_scope:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
 
+            display_tag = record.tag_name
+            display_description = record.description
+            if preview_pattern is not None:
+                new_tag = display_tag
+                new_description = display_description
+                if find_scope in {"tag", "both"}:
+                    new_tag = self._preview_replace(display_tag, preview_pattern, replace_text)
+                if find_scope in {"description", "both"}:
+                    new_description = self._preview_replace(
+                        display_description, preview_pattern, replace_text
+                    )
+                if new_tag != display_tag or new_description != display_description:
+                    preview_changes += 1
+                    display_tag = new_tag
+                    display_description = new_description
+
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._extract_address(record.row_data)
             peers_text = ", ".join(self._tag_conflict_peers.get(tag_name, []))
             searchable = (
-                f"{record.tag_name} {record.description} {address_text} {vessels_text} {peers_text}"
+                f"{display_tag} {display_description} {address_text} {vessels_text} {peers_text}"
             ).lower()
             if query and query not in searchable:
                 continue
@@ -349,10 +386,11 @@ class AppController:
             self._window.tree.insert(
                 "",
                 "end",
+                iid=tag_name,
                 values=(
                     row_number,
-                    record.tag_name,
-                    record.description,
+                    display_tag,
+                    display_description,
                     address_text,
                     group_label,
                     conflicts_with,
@@ -368,6 +406,7 @@ class AppController:
             )
         else:
             self._window.status_var.set(f"{visible_count} tags")
+        self._window.set_find_replace_preview_count(preview_changes)
 
     def _recalculate_conflicted_tags(self) -> None:
         """Builds conflict tag set and peer/group maps from current data."""
@@ -670,8 +709,7 @@ class AppController:
             messagebox.showinfo("Selection Required", "Select a tag to edit first.")
             return
 
-        current_values = self._window.tree.item(selection[0], "values")
-        old_tag = str(current_values[1])
+        old_tag = str(selection[0])
         record = self._tags[old_tag]
         old_description = record.description
         old_address = self._extract_address(record.row_data)
@@ -836,10 +874,7 @@ class AppController:
         assert self._window.tree
         selected_tags: list[str] = []
         for item_id in self._window.tree.selection():
-            values = self._window.tree.item(item_id, "values")
-            if not values:
-                continue
-            tag_name = str(values[1])
+            tag_name = str(item_id)
             if tag_name in self._tags:
                 selected_tags.append(tag_name)
         return selected_tags
