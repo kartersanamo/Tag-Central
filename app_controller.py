@@ -137,77 +137,104 @@ class AppController:
             return
 
         exports: dict[str, list[dict[str, object]]] = {}
+        total_conflicts = self._count_initial_conflicts(rows)
+        resolved_conflicts = 0
+        conflict_dialog = ConflictDialog(self._window.root) if total_conflicts else None
 
-        for row_data in rows:
-            imported_tag = row_data.get("Name", "").strip().upper()
-            imported_description = row_data.get("Description", "").strip().upper()
-            if not imported_tag or not imported_description:
-                continue
+        try:
+            for row_data in rows:
+                imported_tag = row_data.get("Name", "").strip().upper()
+                imported_description = row_data.get("Description", "").strip().upper()
+                if not imported_tag or not imported_description:
+                    continue
 
-            conflict = self._sync.find_conflict(
-                self._tags,
-                imported_tag=imported_tag,
-                imported_description=imported_description,
-            )
-
-            if conflict is None:
-                self._sync.add_or_update_imported(
+                conflict = self._sync.find_conflict(
                     self._tags,
-                    tag_name=imported_tag,
-                    description=imported_description,
-                    vessel=vessel,
-                    row_data=row_data,
+                    imported_tag=imported_tag,
+                    imported_description=imported_description,
                 )
-                self._add_export(exports, vessel, imported_tag, imported_tag, row_data)
-                continue
 
-            existing_tag, existing_record = conflict
-            resolution = ConflictDialog(
-                self._window.root,
-                vessel=vessel,
-                imported_tag=imported_tag,
-                imported_description=imported_description,
-                existing_tag=existing_tag,
-                existing_description=existing_record.description,
-            ).show()
+                if conflict is None:
+                    self._sync.add_or_update_imported(
+                        self._tags,
+                        tag_name=imported_tag,
+                        description=imported_description,
+                        vessel=vessel,
+                        row_data=row_data,
+                    )
+                    self._add_export(exports, vessel, imported_tag, imported_tag, row_data)
+                    continue
 
-            action = resolution.get("action", "skip")
-            if action == "skip":
-                continue
+                resolved_conflicts += 1
+                existing_tag, existing_record = conflict
+                if conflict_dialog is None:
+                    continue
 
-            if action == "use_imported":
-                self._sync.add_or_update_imported(
-                    self._tags,
-                    tag_name=imported_tag,
-                    description=imported_description,
+                resolution = conflict_dialog.resolve_conflict(
                     vessel=vessel,
-                    row_data=row_data,
+                    imported_tag=f"Tag: {imported_tag}",
+                    imported_description=f"Description: {imported_description}",
+                    existing_tag=f"Tag: {existing_tag}",
+                    existing_description=f"Description: {existing_record.description}",
+                    remaining_conflicts=total_conflicts - resolved_conflicts,
+                    total_conflicts=total_conflicts,
                 )
-                self._add_export(exports, vessel, imported_tag, imported_tag, row_data)
-                continue
 
-            if action == "use_existing":
-                resolved_tag = resolution["resolved_tag"]
-                self._sync.add_vessel_to_existing(self._tags, resolved_tag, vessel)
-                self._add_export(exports, vessel, imported_tag, resolved_tag, row_data)
-                continue
+                action = resolution.get("action", "skip")
+                if action == "skip":
+                    continue
 
-            if action == "keep_both":
-                new_tag = self._sync.unique_suffix_name(self._tags, imported_tag)
-                self._sync.add_or_update_imported(
-                    self._tags,
-                    tag_name=new_tag,
-                    description=imported_description,
-                    vessel=vessel,
-                    row_data=row_data,
-                )
-                self._add_export(exports, vessel, imported_tag, new_tag, row_data)
+                if action == "use_imported":
+                    self._sync.add_or_update_imported(
+                        self._tags,
+                        tag_name=imported_tag,
+                        description=imported_description,
+                        vessel=vessel,
+                        row_data=row_data,
+                    )
+                    self._add_export(exports, vessel, imported_tag, imported_tag, row_data)
+                    continue
+
+                if action == "use_existing":
+                    self._sync.add_vessel_to_existing(self._tags, existing_tag, vessel)
+                    self._add_export(exports, vessel, imported_tag, existing_tag, row_data)
+                    continue
+
+                if action == "keep_both":
+                    new_tag = self._sync.unique_suffix_name(self._tags, imported_tag)
+                    self._sync.add_or_update_imported(
+                        self._tags,
+                        tag_name=new_tag,
+                        description=imported_description,
+                        vessel=vessel,
+                        row_data=row_data,
+                    )
+                    self._add_export(exports, vessel, imported_tag, new_tag, row_data)
+        finally:
+            if conflict_dialog is not None:
+                conflict_dialog.close()
 
         self._repository.save(self._tags)
         written = self._export_service.write_exports(exports) if exports else []
         self._refresh_filter_values()
         self.refresh_table()
         self._notify_import_complete(written)
+
+    def _count_initial_conflicts(self, rows: list[dict[str, str]]) -> int:
+        total = 0
+        for row_data in rows:
+            imported_tag = row_data.get("Name", "").strip().upper()
+            imported_description = row_data.get("Description", "").strip().upper()
+            if not imported_tag or not imported_description:
+                continue
+            conflict = self._sync.find_conflict(
+                self._tags,
+                imported_tag=imported_tag,
+                imported_description=imported_description,
+            )
+            if conflict is not None:
+                total += 1
+        return total
 
     def _notify_import_complete(self, written_paths: list[Path]) -> None:
         if not written_paths:
