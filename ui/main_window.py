@@ -110,6 +110,7 @@ class MainWindow:
 
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Edit Tag")
+        self.context_menu.add_command(label="Delete Tag")
 
         status = ttk.Label(main, textvariable=self.status_var, anchor="w")
         status.pack(fill="x", pady=(8, 0))

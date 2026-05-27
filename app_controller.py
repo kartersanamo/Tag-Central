@@ -57,13 +57,23 @@ class AppController:
         self._window.context_menu.entryconfigure(
             0, command=self.edit_selected_tag
         )
+        self._window.context_menu.entryconfigure(
+            1, command=self.delete_selected_tags
+        )
 
     def _show_context_menu(self, event: tk.Event) -> None:
         assert self._window.tree and self._window.context_menu
-        selected = self._window.tree.identify_row(event.y)
-        if not selected:
+        clicked_item = self._window.tree.identify_row(event.y)
+        if not clicked_item:
             return
-        self._window.tree.selection_set(selected)
+
+        current_selection = set(self._window.tree.selection())
+        if clicked_item not in current_selection:
+            self._window.tree.selection_set(clicked_item)
+
+        selected_count = len(self._window.tree.selection())
+        delete_label = "Delete Tag" if selected_count <= 1 else f"Delete {selected_count} tags"
+        self._window.context_menu.entryconfigure(1, label=delete_label)
         self._window.context_menu.post(event.x_root, event.y_root)
 
     def save_database_manual(self) -> None:
@@ -161,13 +171,7 @@ class AppController:
                 f"{visible_count} conflict tags in {len(visible_groups)} groups"
             )
         else:
-            conflict_note = ""
-            if self._conflicted_tags:
-                group_count = len(
-                    {self._tag_conflict_group[tag] for tag in self._conflicted_tags}
-                )
-                conflict_note = f" | {len(self._conflicted_tags)} conflicts in {group_count} groups"
-            self._window.status_var.set(f"{visible_count} tags{conflict_note}")
+            self._window.status_var.set(f"{visible_count} tags")
 
     def _recalculate_conflicted_tags(self) -> None:
         """Builds conflict tag set and peer/group maps from current data."""
@@ -192,9 +196,6 @@ class AppController:
             for tag_name in sorted_tags:
                 group_map[tag_name] = group_id
                 peers_map[tag_name] = [peer for peer in sorted_tags if peer != tag_name]
-
-        if self._conflicted_tags:
-            recalculated.update(self._conflicted_tags)
 
         self._conflicted_tags = recalculated
         self._tag_conflict_peers = {
@@ -523,3 +524,54 @@ class AppController:
             )
         else:
             messagebox.showinfo("Tag Updated", "Tag details were updated successfully.")
+
+    def delete_selected_tags(self) -> None:
+        """Deletes one or multiple selected tags with confirmation."""
+        selected_tags = self._get_selected_tag_names()
+        if not selected_tags:
+            messagebox.showinfo("Selection Required", "Select at least one tag to delete.")
+            return
+
+        if len(selected_tags) == 1:
+            tag_name = selected_tags[0]
+            confirmed = messagebox.askyesno(
+                "Delete Tag",
+                f"Delete tag '{tag_name}'?\n\nThis cannot be undone.",
+            )
+        else:
+            preview = ", ".join(selected_tags[:8])
+            if len(selected_tags) > 8:
+                preview += ", ..."
+            confirmed = messagebox.askyesno(
+                "Delete Tags",
+                f"Delete {len(selected_tags)} selected tags?\n\n"
+                f"Selected tags: {preview}\n\n"
+                "This cannot be undone.",
+            )
+
+        if not confirmed:
+            return
+
+        for tag_name in selected_tags:
+            self._tags.pop(tag_name, None)
+            self._conflicted_tags.discard(tag_name)
+            self._tag_conflict_peers.pop(tag_name, None)
+            self._tag_conflict_group.pop(tag_name, None)
+
+        self._repository.save(self._tags)
+        self._refresh_filter_values()
+        self.refresh_table()
+        messagebox.showinfo("Deleted", f"Deleted {len(selected_tags)} tag(s).")
+
+    def _get_selected_tag_names(self) -> list[str]:
+        """Returns tag names from selected rows in the tree."""
+        assert self._window.tree
+        selected_tags: list[str] = []
+        for item_id in self._window.tree.selection():
+            values = self._window.tree.item(item_id, "values")
+            if not values:
+                continue
+            tag_name = str(values[0])
+            if tag_name in self._tags:
+                selected_tags.append(tag_name)
+        return selected_tags
