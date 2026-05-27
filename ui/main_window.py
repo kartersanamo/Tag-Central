@@ -110,11 +110,11 @@ class MainWindow:
         self.find_replace_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
         self.find_replace_bar.pack(fill="x", pady=(10, 8))
         ttk.Label(self.find_replace_bar, text="Find").pack(side="left", padx=(0, 6))
-        ttk.Entry(self.find_replace_bar, textvariable=self.find_text_var, width=28).pack(
+        ttk.Entry(self.find_replace_bar, textvariable=self.find_text_var, width=26).pack(
             side="left", padx=(0, 6)
         )
         ttk.Label(self.find_replace_bar, text="Replace").pack(side="left", padx=(0, 6))
-        ttk.Entry(self.find_replace_bar, textvariable=self.replace_text_var, width=28).pack(
+        ttk.Entry(self.find_replace_bar, textvariable=self.replace_text_var, width=26).pack(
             side="left", padx=(0, 6)
         )
         ttk.Label(self.find_replace_bar, text="Scope").pack(side="left", padx=(0, 6))

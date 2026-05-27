@@ -70,6 +70,7 @@ class AppController:
         self._pending_changes: dict[str, list[dict[str, object]]] = {}
         self._sort_column = "tag_name"
         self._sort_descending = False
+        self._sort_before_internal_mismatches: tuple[str, bool] | None = None
         self._column_heading_labels = {
             "row_number": "#",
             "tag_name": "Tag",
@@ -838,10 +839,20 @@ class AppController:
         if self._window.view_conflicts_var.get():
             self._recalculate_conflicted_tags()
             self._view_conflict_session_tags = set(self._conflicted_tags)
+            if self._sort_before_internal_mismatches is None:
+                self._sort_before_internal_mismatches = (
+                    self._sort_column,
+                    self._sort_descending,
+                )
             self._sort_column = "conflict_group"
             self._sort_descending = False
         else:
             self._view_conflict_session_tags.clear()
+            if self._sort_before_internal_mismatches is not None:
+                self._sort_column, self._sort_descending = (
+                    self._sort_before_internal_mismatches
+                )
+                self._sort_before_internal_mismatches = None
         self.refresh_table()
 
     def refresh_table(self) -> None:
