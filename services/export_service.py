@@ -25,8 +25,21 @@ class ExportService:
                 rows.append(row)
 
             frame = pd.DataFrame(rows)
-            output_path = self._export_folder / f"{vessel}_BATCH_EXPORT.csv"
+            output_path = self._next_available_export_path(f"{vessel}_BATCH_EXPORT")
             frame.to_csv(output_path, index=False)
             written_paths.append(output_path)
 
         return written_paths
+
+    def _next_available_export_path(self, base_name: str) -> Path:
+        """Returns a non-overwriting export path with -N suffix if needed."""
+        primary = self._export_folder / f"{base_name}.csv"
+        if not primary.exists():
+            return primary
+
+        index = 1
+        while True:
+            candidate = self._export_folder / f"{base_name}-{index}.csv"
+            if not candidate.exists():
+                return candidate
+            index += 1

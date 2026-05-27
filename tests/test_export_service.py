@@ -53,6 +53,15 @@ class TestExportService(unittest.TestCase):
         names = sorted(path.name for path in written)
         self.assertEqual(names, ["A_BATCH_EXPORT.csv", "B_BATCH_EXPORT.csv"])
 
+    def test_export_never_overwrites_existing_file(self) -> None:
+        exports = {"NANUQ": [{"row": {"Name": "N1", "Description": "DESC"}}]}
+
+        first = self.service.write_exports(exports)
+        second = self.service.write_exports(exports)
+
+        self.assertEqual(first[0].name, "NANUQ_BATCH_EXPORT.csv")
+        self.assertEqual(second[0].name, "NANUQ_BATCH_EXPORT-1.csv")
+
 
 if __name__ == "__main__":
     unittest.main()
