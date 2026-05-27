@@ -102,6 +102,16 @@ class AppController:
         self._pending_changes.setdefault(vessel, []).append({"row": dict(row_data)})
         self._update_pending_change_indicator()
 
+    def _queue_change_if_different(
+        self,
+        vessel: str,
+        original_row: dict[str, str],
+        updated_row: dict[str, str],
+    ) -> None:
+        """Queues change only when updated row differs from imported row."""
+        if original_row != updated_row:
+            self._queue_change(vessel=vessel, row_data=updated_row)
+
     def _refresh_filter_values(self) -> None:
         assert self._window.vessel_combo
         vessels = sorted(
@@ -274,6 +284,8 @@ class AppController:
             messagebox.showerror("Import Error", str(error))
             return
 
+        original_rows = [dict(row) for row in rows]
+
         summary = {
             "total_rows": len(rows),
             "rows_missing_name": 0,
@@ -295,7 +307,7 @@ class AppController:
         pending_conflicts: list[dict[str, object]] = []
         self._conflicted_tags = set()
 
-        for row_data in rows:
+        for row_index, row_data in enumerate(rows):
             imported_tag = row_data.get("Name", "").strip().upper()
             imported_description = row_data.get("Description", "").strip().upper()
             if not imported_tag:
@@ -327,6 +339,14 @@ class AppController:
                     summary["new_tags_created"] += 1
                 else:
                     summary["existing_tags_updated"] += 1
+                updated_row = dict(row_data)
+                updated_row["Name"] = imported_tag
+                updated_row["Description"] = imported_description
+                self._queue_change_if_different(
+                    vessel=vessel,
+                    original_row=original_rows[row_index],
+                    updated_row=updated_row,
+                )
                 continue
 
             summary["conflicts_detected"] += 1
@@ -339,6 +359,7 @@ class AppController:
                     "existing_description": existing_record.description,
                     "row_data": row_data,
                     "existing_same_tag": existing_same_tag,
+                    "row_index": row_index,
                 }
             )
 
@@ -368,6 +389,8 @@ class AppController:
                 existing_tag = str(conflict["existing_tag"])
                 row_data = dict(conflict["row_data"])
                 existing_same_tag = conflict["existing_same_tag"]
+                row_index = int(conflict["row_index"])
+                original_row = original_rows[row_index]
                 action = decision.get("action", "skip")
                 if action == "skip":
                     summary["skipped_by_user"] += 1
@@ -386,6 +409,14 @@ class AppController:
                         summary["new_tags_created"] += 1
                     else:
                         summary["existing_tags_updated"] += 1
+                    updated_row = dict(row_data)
+                    updated_row["Name"] = imported_tag
+                    updated_row["Description"] = imported_description
+                    self._queue_change_if_different(
+                        vessel=vessel,
+                        original_row=original_row,
+                        updated_row=updated_row,
+                    )
                     self._conflicted_tags.add(imported_tag)
                     continue
 
@@ -396,9 +427,10 @@ class AppController:
                     updated_row = dict(row_data)  # type: ignore[arg-type]
                     updated_row["Name"] = existing_tag
                     updated_row["Description"] = self._tags[existing_tag].description
-                    self._queue_change(
+                    self._queue_change_if_different(
                         vessel=vessel,
-                        row_data=updated_row,
+                        original_row=original_row,
+                        updated_row=updated_row,
                     )
                     self._conflicted_tags.add(existing_tag)
                     continue
@@ -417,9 +449,10 @@ class AppController:
                     updated_row = dict(row_data)  # type: ignore[arg-type]
                     updated_row["Name"] = new_tag
                     updated_row["Description"] = imported_description
-                    self._queue_change(
+                    self._queue_change_if_different(
                         vessel=vessel,
-                        row_data=updated_row,
+                        original_row=original_row,
+                        updated_row=updated_row,
                     )
                     self._conflicted_tags.add(existing_tag)
                     self._conflicted_tags.add(new_tag)
