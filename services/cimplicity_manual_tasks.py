@@ -131,3 +131,10 @@ class CimplicityManualTasks:
         self.save()
         return cleared
 
+    def clear_all(self) -> int:
+        """Removes every task (pending or checked). Returns count removed."""
+        count = len(self._items)
+        self._items = []
+        self.save()
+        return count
+

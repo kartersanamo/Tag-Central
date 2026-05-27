@@ -95,27 +95,27 @@ class MainWindow:
         self.find_replace_button = ttk.Button(control_bar, text="Find & Replace ▾")
         self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
-        self.import_proficy_button.pack(side="left", padx=(0, 8))
-        self.import_cimplicity_button.pack(side="left", padx=8)
-        self.align_selected_button.pack(side="left", padx=8)
-        self.cimplicity_review_button.pack(side="left", padx=8)
-        self.cimplicity_tasks_button.pack(side="left", padx=8)
-        self.backups_button.pack(side="left", padx=8)
-        self.refresh_button.pack(side="left", padx=8)
-        self.add_tag_button.pack(side="left", padx=8)
-        self.find_replace_button.pack(side="left", padx=8)
-        self.export_changes_button.pack(side="left", padx=8)
-        self.change_tag_button.pack(side="left", padx=8)
+        self.import_proficy_button.pack(side="left", padx=(0, 6))
+        self.import_cimplicity_button.pack(side="left", padx=6)
+        self.align_selected_button.pack(side="left", padx=6)
+        self.cimplicity_review_button.pack(side="left", padx=6)
+        self.cimplicity_tasks_button.pack(side="left", padx=6)
+        self.backups_button.pack(side="left", padx=6)
+        self.refresh_button.pack(side="left", padx=6)
+        self.add_tag_button.pack(side="left", padx=6)
+        self.find_replace_button.pack(side="left", padx=6)
+        self.export_changes_button.pack(side="left", padx=6)
+        self.change_tag_button.pack(side="left", padx=6)
 
         self.find_replace_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
         self.find_replace_bar.pack(fill="x", pady=(10, 8))
         ttk.Label(self.find_replace_bar, text="Find").pack(side="left", padx=(0, 6))
         ttk.Entry(self.find_replace_bar, textvariable=self.find_text_var, width=28).pack(
-            side="left", padx=(0, 10)
+            side="left", padx=(0, 6)
         )
         ttk.Label(self.find_replace_bar, text="Replace").pack(side="left", padx=(0, 6))
         ttk.Entry(self.find_replace_bar, textvariable=self.replace_text_var, width=28).pack(
-            side="left", padx=(0, 10)
+            side="left", padx=(0, 6)
         )
         ttk.Label(self.find_replace_bar, text="Scope").pack(side="left", padx=(0, 6))
         self.find_scope_combo = ttk.Combobox(
@@ -125,22 +125,22 @@ class MainWindow:
             state="readonly",
             width=14,
         )
-        self.find_scope_combo.pack(side="left", padx=(0, 10))
+        self.find_scope_combo.pack(side="left", padx=(0, 6))
         ttk.Checkbutton(
             self.find_replace_bar,
             text="Preview Changes",
             variable=self.preview_changes_var,
-        ).pack(side="left", padx=(0, 10))
+        ).pack(side="left", padx=(0, 6))
         self.find_replace_apply_button = ttk.Button(self.find_replace_bar, text="Apply")
         self.find_replace_apply_button.pack(side="left", padx=(0, 8))
         self.find_replace_clear_button = ttk.Button(self.find_replace_bar, text="Clear")
         self.find_replace_clear_button.pack(side="left", padx=(0, 8))
         ttk.Label(self.find_replace_bar, textvariable=self.find_replace_status_var).pack(
-            side="right", padx=(10, 0)
+            side="right", padx=(6, 0)
         )
 
         filter_bar = ttk.Frame(main)
-        filter_bar.pack(fill="x", pady=(12, 10))
+        filter_bar.pack(fill="x", pady=(12, 10))  
         ttk.Label(filter_bar, text="Vessel").pack(side="left", padx=(0, 8))
         self.vessel_combo = ttk.Combobox(
             filter_bar, state="readonly", textvariable=self.vessel_var, width=24

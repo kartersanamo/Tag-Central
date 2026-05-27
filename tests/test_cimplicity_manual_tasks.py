@@ -47,6 +47,21 @@ class TestCimplicityManualTasks(unittest.TestCase):
         self.queue.set_all_done(True)
         self.assertEqual(self.queue.pending_count(), 0)
 
+    def test_clear_all(self) -> None:
+        self.queue.add_task(
+            vessel="C-LEGACY",
+            tag_name="TAG_1",
+            field="description",
+            old_value="OLD",
+            new_value="NEW",
+            reason="manual",
+        )
+        self.queue.set_done(self.queue.items[0].task_id, True)
+        cleared = self.queue.clear_all()
+        self.assertEqual(cleared, 1)
+        self.assertEqual(self.queue.pending_count(), 0)
+        self.assertEqual(len(self.queue.items), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

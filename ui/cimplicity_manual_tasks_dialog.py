@@ -96,6 +96,11 @@ class CimplicityManualTasksDialog:
 
         self._render()
 
+    def show_modal(self) -> None:
+        """Blocks until the user closes this dialog."""
+        self._window.grab_set()
+        self._window.wait_window()
+
     def _render(self) -> None:
         self._tree.delete(*self._tree.get_children())
         for item in self._tasks.items:

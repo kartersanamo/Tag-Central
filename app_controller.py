@@ -1821,10 +1821,17 @@ class AppController:
         return True
 
     def _handle_app_close(self) -> None:
-        """Prevents closing app while pending batches exist."""
-        if not self._pending_changes:
-            self._window.root.destroy()
+        """Prevents closing while Proficy exports or Cimplicity manual tasks are pending."""
+        if self._pending_changes and not self._resolve_pending_exports_on_close():
             return
+        if self._manual_tasks.pending_count() and not self._resolve_pending_cimplicity_tasks_on_close():
+            return
+        self._window.root.destroy()
+
+    def _resolve_pending_exports_on_close(self) -> bool:
+        """Returns True when there are no pending Proficy export batches left."""
+        if not self._pending_changes:
+            return True
 
         close_choice = messagebox.askyesnocancel(
             "Pending Changes",
@@ -1834,12 +1841,11 @@ class AppController:
             "Select Cancel to go back to the application.",
         )
         if close_choice is None:
-            return
+            return False
 
         if close_choice:
             self.export_pending_changes()
-            self._window.root.destroy()
-            return
+            return not self._pending_changes
 
         confirm_abort = messagebox.askyesno(
             "Abort Pending Changes",
@@ -1848,7 +1854,46 @@ class AppController:
         if confirm_abort:
             self._pending_changes.clear()
             self._update_pending_change_indicator()
-            self._window.root.destroy()
+            return True
+        return False
+
+    def _resolve_pending_cimplicity_tasks_on_close(self) -> bool:
+        """Returns True when there are no pending manual Cimplicity tasks left."""
+        if self._manual_tasks.pending_count() == 0:
+            return True
+
+        pending_count = self._manual_tasks.pending_count()
+        close_choice = messagebox.askyesnocancel(
+            "Pending Cimplicity Tasks",
+            f"There are {pending_count} pending manual Cimplicity task(s).\n\n"
+            "Select Yes to open the Cimplicity tasks list now.\n"
+            "Select No to discard all pending Cimplicity tasks.\n"
+            "Select Cancel to go back to the application.",
+        )
+        if close_choice is None:
+            return False
+
+        if close_choice:
+            dialog = CimplicityManualTasksDialog(
+                self._window.root,
+                tasks=self._manual_tasks,
+                on_change=self._update_manual_tasks_indicator,
+            )
+            dialog.show_modal()
+            if self._manual_tasks.pending_count() > 0:
+                return False
+            return True
+
+        confirm_abort = messagebox.askyesno(
+            "Abort Pending Cimplicity Tasks",
+            "Abort and discard all pending manual Cimplicity tasks?\n\n"
+            "This cannot be undone.",
+        )
+        if confirm_abort:
+            self._manual_tasks.clear_all()
+            self._update_manual_tasks_indicator()
+            return True
+        return False
 
     def _get_selected_tag_names(self) -> list[str]:
         """Returns tag names from selected rows in the tree."""
