@@ -12,6 +12,7 @@ from services.spreadsheet_loader import SpreadsheetLoader
 from services.tag_repository import TagRepository
 from services.tag_sync_service import TagSyncService
 from ui.conflict_dialog import ConflictDialog
+from ui.edit_tag_dialog import EditTagDialog
 from ui.main_window import MainWindow
 from ui.missing_description_dialog import MissingDescriptionDialog
 
@@ -27,6 +28,7 @@ class AppController:
         self._sync = TagSyncService()
         self._tags: dict[str, TagRecord] = self._repository.load()
         self._active_vessel_filter: str | None = None
+        self._conflicted_tags: set[str] = set()
 
         self._window = MainWindow(root)
         self._bind_events()
@@ -43,13 +45,14 @@ class AppController:
         self._window.save_button.configure(command=self.save_database_manual)
         self._window.refresh_button.configure(command=self.refresh_table)
         self._window.reset_filter_button.configure(command=self.reset_vessel_filter)
-        self._window.change_tag_button.configure(command=self.rename_selected_tag)
+        self._window.change_tag_button.configure(command=self.edit_selected_tag)
 
         self._window.search_var.trace_add("write", lambda *_: self.refresh_table())
+        self._window.view_conflicts_var.trace_add("write", lambda *_: self.refresh_table())
         self._window.vessel_combo.bind("<<ComboboxSelected>>", self.apply_vessel_filter)
         self._window.tree.bind("<Button-3>", self._show_context_menu)
         self._window.context_menu.entryconfigure(
-            0, command=self.rename_selected_tag
+            0, command=self.edit_selected_tag
         )
 
     def _show_context_menu(self, event: tk.Event) -> None:
@@ -96,6 +99,8 @@ class AppController:
 
         for tag_name in sorted(self._tags):
             record = self._tags[tag_name]
+            if self._window.view_conflicts_var.get() and tag_name not in self._conflicted_tags:
+                continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
 
@@ -108,6 +113,7 @@ class AppController:
                 "",
                 "end",
                 values=(record.tag_name, record.description, vessels_text),
+                tags=("conflict",) if record.tag_name in self._conflicted_tags else (),
             )
             visible_count += 1
 
@@ -159,6 +165,7 @@ class AppController:
             return
 
         pending_conflicts: list[dict[str, object]] = []
+        self._conflicted_tags = set()
 
         for row_data in rows:
             imported_tag = row_data.get("Name", "").strip().upper()
@@ -251,6 +258,7 @@ class AppController:
                         summary["new_tags_created"] += 1
                     else:
                         summary["existing_tags_updated"] += 1
+                    self._conflicted_tags.add(imported_tag)
                     continue
 
                 if action == "use_existing":
@@ -264,6 +272,7 @@ class AppController:
                         existing_tag,
                         row_data,  # type: ignore[arg-type]
                     )
+                    self._conflicted_tags.add(existing_tag)
                     continue
 
                 if action == "keep_both":
@@ -284,6 +293,8 @@ class AppController:
                         new_tag,
                         row_data,  # type: ignore[arg-type]
                     )
+                    self._conflicted_tags.add(existing_tag)
+                    self._conflicted_tags.add(new_tag)
 
         self._repository.save(self._tags)
         written = self._export_service.write_exports(exports) if exports else []
@@ -367,48 +378,62 @@ class AppController:
             {"old_tag": old_tag, "new_tag": new_tag, "row": row_data}
         )
 
-    def rename_selected_tag(self) -> None:
+    def edit_selected_tag(self) -> None:
         assert self._window.tree
         selection = self._window.tree.selection()
         if not selection:
-            messagebox.showinfo("Selection Required", "Select a tag to rename first.")
+            messagebox.showinfo("Selection Required", "Select a tag to edit first.")
             return
 
         current_values = self._window.tree.item(selection[0], "values")
         old_tag = str(current_values[0])
+        record = self._tags[old_tag]
 
-        new_tag = simpledialog.askstring("Rename Tag", f"Rename '{old_tag}' to:")
-        if not new_tag:
+        edited = EditTagDialog(
+            self._window.root,
+            tag_name=record.tag_name,
+            description=record.description,
+            vessels=set(record.vessels),
+        ).show()
+        if edited is None:
             return
-        new_tag = new_tag.strip().upper()
+
+        new_tag = str(edited["tag_name"]).strip().upper()
+        new_description = str(edited["description"]).strip().upper()
+        new_vessels = set(edited["vessels"])
         if not new_tag:
             messagebox.showwarning("Invalid Tag", "Tag name cannot be empty.")
+            return
+        if not new_description:
+            messagebox.showwarning("Invalid Description", "Description cannot be empty.")
             return
         if new_tag in self._tags and new_tag != old_tag:
             messagebox.showerror("Duplicate Tag", "That tag already exists.")
             return
 
-        record = self._tags.pop(old_tag)
+        self._tags.pop(old_tag)
         record.tag_name = new_tag
+        record.description = new_description
+        record.vessels = new_vessels
         self._tags[new_tag] = record
+        if old_tag in self._conflicted_tags:
+            self._conflicted_tags.discard(old_tag)
+            self._conflicted_tags.add(new_tag)
         self._repository.save(self._tags)
 
-        exports = {"GLOBAL": [{"old_tag": old_tag, "new_tag": new_tag, "row": record.row_data}]}
-        written = self._export_service.write_exports(exports)
+        written: list[Path] = []
+        if old_tag != new_tag:
+            exports = {
+                "GLOBAL": [{"old_tag": old_tag, "new_tag": new_tag, "row": record.row_data}]
+            }
+            written = self._export_service.write_exports(exports)
         self._refresh_filter_values()
         self.refresh_table()
-        rename_summary = {
-            "total_rows": 0,
-            "rows_missing_name": 0,
-            "rows_missing_description_filled": 0,
-            "unchanged_matches": 0,
-            "conflicts_detected": 0,
-            "skipped_by_user": 0,
-            "resolved_use_imported": 0,
-            "resolved_use_existing": 0,
-            "resolved_keep_both": 0,
-            "new_tags_created": 0,
-            "existing_tags_updated": 0,
-            "merged_to_existing": 0,
-        }
-        self._notify_import_complete(written, rename_summary)
+        if written:
+            messagebox.showinfo(
+                "Tag Updated",
+                "Tag updated successfully.\n\n"
+                "A rename export was generated because the tag name changed.",
+            )
+        else:
+            messagebox.showinfo("Tag Updated", "Tag details were updated successfully.")

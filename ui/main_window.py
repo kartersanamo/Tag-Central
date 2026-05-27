@@ -15,6 +15,7 @@ class MainWindow:
         self.root = root
         self.search_var = tk.StringVar()
         self.vessel_var = tk.StringVar(value="ALL")
+        self.view_conflicts_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="0 tags")
 
         self.import_button: ttk.Button | None = None
@@ -55,7 +56,7 @@ class MainWindow:
         self.import_button = ttk.Button(control_bar, text="Import Spreadsheet")
         self.save_button = ttk.Button(control_bar, text="Save")
         self.refresh_button = ttk.Button(control_bar, text="Refresh")
-        self.change_tag_button = ttk.Button(control_bar, text="Rename Selected Tag")
+        self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
         self.import_button.pack(side="left", padx=(0, 8))
         self.save_button.pack(side="left", padx=8)
         self.refresh_button.pack(side="left", padx=8)
@@ -75,6 +76,11 @@ class MainWindow:
         ttk.Entry(filter_bar, textvariable=self.search_var, width=40).pack(
             side="left", padx=(0, 8)
         )
+        ttk.Checkbutton(
+            filter_bar,
+            text="View Conflicts",
+            variable=self.view_conflicts_var,
+        ).pack(side="left", padx=(12, 0))
 
         table_frame = ttk.Frame(main)
         table_frame.pack(fill="both", expand=True)
@@ -88,6 +94,7 @@ class MainWindow:
         self.tree.column("tag_name", width=220, anchor="w")
         self.tree.column("description", width=360, anchor="w")
         self.tree.column("vessels", width=520, anchor="w")
+        self.tree.tag_configure("conflict", background="#fff4f4")
 
         y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=y_scroll.set)
@@ -95,7 +102,7 @@ class MainWindow:
         y_scroll.pack(side="left", fill="y")
 
         self.context_menu = tk.Menu(self.root, tearoff=0)
-        self.context_menu.add_command(label="Rename Selected Tag")
+        self.context_menu.add_command(label="Edit Tag")
 
         status = ttk.Label(main, textvariable=self.status_var, anchor="w")
         status.pack(fill="x", pady=(8, 0))
