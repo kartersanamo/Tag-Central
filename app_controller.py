@@ -31,6 +31,7 @@ class AppController:
         self._conflicted_tags: set[str] = set()
         self._tag_conflict_peers: dict[str, list[str]] = {}
         self._tag_conflict_group: dict[str, int] = {}
+        self._view_conflict_session_tags: set[str] = set()
 
         self._window = MainWindow(root)
         self._bind_events()
@@ -51,7 +52,9 @@ class AppController:
         self._window.change_tag_button.configure(command=self.edit_selected_tag)
 
         self._window.search_var.trace_add("write", lambda *_: self.refresh_table())
-        self._window.view_conflicts_var.trace_add("write", lambda *_: self.refresh_table())
+        self._window.view_conflicts_var.trace_add(
+            "write", lambda *_: self._on_view_conflicts_toggle()
+        )
         self._window.vessel_combo.bind("<<ComboboxSelected>>", self.apply_vessel_filter)
         self._window.tree.bind("<Button-3>", self._show_context_menu)
         self._window.context_menu.entryconfigure(
@@ -103,15 +106,30 @@ class AppController:
         self._active_vessel_filter = None
         self.refresh_table()
 
+    def _on_view_conflicts_toggle(self) -> None:
+        """Tracks conflict-view session behavior for inline resolution workflows."""
+        if self._window.view_conflicts_var.get():
+            self._recalculate_conflicted_tags()
+            self._view_conflict_session_tags = set(self._conflicted_tags)
+        else:
+            self._view_conflict_session_tags.clear()
+        self.refresh_table()
+
     def refresh_table(self) -> None:
         assert self._window.tree
         self._recalculate_conflicted_tags()
         query = self._window.search_var.get().strip().lower()
         view_conflicts_only = self._window.view_conflicts_var.get()
 
+        if view_conflicts_only:
+            self._view_conflict_session_tags.update(self._conflicted_tags)
+            visible_conflict_scope = self._view_conflict_session_tags
+        else:
+            visible_conflict_scope = self._conflicted_tags
+
         rows_to_show: list[tuple[str, TagRecord]] = []
         for tag_name, record in self._tags.items():
-            if view_conflicts_only and tag_name not in self._conflicted_tags:
+            if view_conflicts_only and tag_name not in visible_conflict_scope:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
@@ -126,13 +144,21 @@ class AppController:
             rows_to_show.append((tag_name, record))
 
         if view_conflicts_only:
-            rows_to_show.sort(
+            active_rows = [
+                item for item in rows_to_show if item[0] in self._tag_conflict_group
+            ]
+            resolved_rows = [
+                item for item in rows_to_show if item[0] not in self._tag_conflict_group
+            ]
+            active_rows.sort(
                 key=lambda item: (
                     self._tag_conflict_group.get(item[0], 999999),
                     item[1].description,
                     item[0],
                 )
             )
+            resolved_rows.sort(key=lambda item: item[0])
+            rows_to_show = active_rows + resolved_rows
         else:
             rows_to_show.sort(key=lambda item: item[0])
 
