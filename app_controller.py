@@ -286,7 +286,40 @@ class AppController:
         first_row = visible_group_rows[0]
         self._window.tree.selection_set(visible_group_rows)
         self._window.tree.focus(first_row)
-        self._window.tree.see(first_row)
+        self._window.root.after_idle(
+            lambda row=first_row: self._scroll_tree_row_to_center(row)
+        )
+
+    def _scroll_tree_row_to_center(self, item_id: str) -> None:
+        """Scrolls the table so item_id sits near the vertical center of the viewport."""
+        assert self._window.tree
+        tree = self._window.tree
+        children = list(tree.get_children(""))
+        if item_id not in children:
+            tree.see(item_id)
+            return
+
+        index = children.index(item_id)
+        total = len(children)
+        tree.update_idletasks()
+
+        row_height = 22
+        for child in children[: min(8, total)]:
+            bbox = tree.bbox(child)
+            if bbox:
+                row_height = max(bbox[3], 18)
+                break
+
+        viewport_height = max(tree.winfo_height(), row_height)
+        visible_rows = max(1, viewport_height // row_height)
+
+        if total <= visible_rows:
+            tree.yview_moveto(0)
+            return
+
+        top_index = max(0, min(index - visible_rows // 2, total - visible_rows))
+        fraction = top_index / (total - visible_rows)
+        tree.yview_moveto(fraction)
 
     @staticmethod
     def _description_increment_base(description: str) -> str:
