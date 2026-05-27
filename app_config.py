@@ -12,8 +12,10 @@ EXPORT_FOLDER = PROJECT_ROOT / "exports"
 BACKUP_FOLDER = PROJECT_ROOT / "backups"
 
 DEFAULT_TABLE_COLUMNS = (
+    "row_number",
     "tag_name",
     "description",
+    "address",
     "conflict_group",
     "conflicts_with",
     "vessels",

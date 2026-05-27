@@ -23,6 +23,7 @@ class MainWindow:
         self.backups_button: ttk.Button | None = None
         self.refresh_button: ttk.Button | None = None
         self.export_changes_button: ttk.Button | None = None
+        self.find_replace_button: ttk.Button | None = None
         self.reset_filter_button: ttk.Button | None = None
         self.change_tag_button: ttk.Button | None = None
         self.vessel_combo: ttk.Combobox | None = None
@@ -59,11 +60,13 @@ class MainWindow:
         self.import_button = ttk.Button(control_bar, text="Import Spreadsheet")
         self.backups_button = ttk.Button(control_bar, text="Backups")
         self.refresh_button = ttk.Button(control_bar, text="Refresh")
+        self.find_replace_button = ttk.Button(control_bar, text="Find & Replace")
         self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
         self.import_button.pack(side="left", padx=(0, 8))
         self.backups_button.pack(side="left", padx=8)
         self.refresh_button.pack(side="left", padx=8)
+        self.find_replace_button.pack(side="left", padx=8)
         self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)
 
@@ -94,16 +97,20 @@ class MainWindow:
         self.tree = ttk.Treeview(
             table_frame, columns=DEFAULT_TABLE_COLUMNS, show="headings", height=16
         )
+        self.tree.heading("row_number", text="#")
         self.tree.heading("tag_name", text="Tag")
         self.tree.heading("description", text="Description")
+        self.tree.heading("address", text="Address")
         self.tree.heading("conflict_group", text="Group")
         self.tree.heading("conflicts_with", text="Conflicts With")
         self.tree.heading("vessels", text="Vessels")
-        self.tree.column("tag_name", width=200, anchor="w")
-        self.tree.column("description", width=280, anchor="w")
+        self.tree.column("row_number", width=55, anchor="center")
+        self.tree.column("tag_name", width=180, anchor="w")
+        self.tree.column("description", width=240, anchor="w")
+        self.tree.column("address", width=170, anchor="w")
         self.tree.column("conflict_group", width=70, anchor="center")
-        self.tree.column("conflicts_with", width=260, anchor="w")
-        self.tree.column("vessels", width=320, anchor="w")
+        self.tree.column("conflicts_with", width=210, anchor="w")
+        self.tree.column("vessels", width=260, anchor="w")
         for index, color in enumerate(CONFLICT_GROUP_COLORS):
             self.tree.tag_configure(f"conflict_g{index}", background=color)
 

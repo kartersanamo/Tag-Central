@@ -1,6 +1,7 @@
 """Application orchestration and event handlers."""
 
 import tkinter as tk
+import re
 from tkinter import filedialog, messagebox, simpledialog
 
 from app_config import BACKUP_FOLDER, CONFLICT_GROUP_COLORS, DATABASE_FILE, EXPORT_FOLDER
@@ -14,6 +15,7 @@ from services.tag_sync_service import TagSyncService
 from ui.backups_dialog import BackupsDialog
 from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
+from ui.find_replace_dialog import FindReplaceDialog
 from ui.main_window import MainWindow
 from ui.missing_description_dialog import MissingDescriptionDialog
 
@@ -47,6 +49,7 @@ class AppController:
     def _bind_events(self) -> None:
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
+        assert self._window.find_replace_button
         assert self._window.export_changes_button
         assert self._window.change_tag_button and self._window.vessel_combo
         assert self._window.tree and self._window.context_menu
@@ -54,6 +57,7 @@ class AppController:
         self._window.import_button.configure(command=self.import_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
+        self._window.find_replace_button.configure(command=self.open_find_replace)
         self._window.export_changes_button.configure(command=self.export_pending_changes)
         self._window.reset_filter_button.configure(command=self.reset_vessel_filter)
         self._window.change_tag_button.configure(command=self.edit_selected_tag)
@@ -110,6 +114,80 @@ class AppController:
             on_restore=self._restore_backup_from_page,
             on_revert_latest=self._revert_latest_backup_from_page,
         ).show()
+
+    def open_find_replace(self) -> None:
+        """Opens find/replace dialog and applies operation."""
+        payload = FindReplaceDialog(self._window.root).show()
+        if payload is None:
+            return
+
+        find_text = payload["find_text"].strip()
+        replace_text = payload["replace_text"]
+        scope = payload["scope"]
+        if not find_text:
+            messagebox.showwarning("Invalid Input", "Find text cannot be empty.")
+            return
+
+        changed_count = self._apply_find_replace(find_text, replace_text, scope)
+        if changed_count == 0:
+            messagebox.showinfo("Find & Replace", "No matching rows were changed.")
+            return
+
+        self._persist_tags()
+        self._refresh_filter_values()
+        self.refresh_table()
+        messagebox.showinfo(
+            "Find & Replace Complete",
+            f"Updated {changed_count} tag(s). Changes were autosaved and batched for export.",
+        )
+
+    def _apply_find_replace(self, find_text: str, replace_text: str, scope: str) -> int:
+        """Applies text replacement and returns number of changed tags."""
+        changed_tags = 0
+        pattern = re.compile(re.escape(find_text), flags=re.IGNORECASE)
+
+        for tag_name in list(self._tags.keys()):
+            record = self._tags[tag_name]
+            old_tag_name = record.tag_name
+            old_description = record.description
+            old_vessels = set(record.vessels)
+            old_row_data = dict(record.row_data)
+
+            new_tag_name = old_tag_name
+            new_description = old_description
+
+            if scope in {"tag", "both"}:
+                new_tag_name = pattern.sub(replace_text.upper(), old_tag_name).strip().upper()
+            if scope in {"description", "both"}:
+                new_description = pattern.sub(
+                    replace_text.upper(), old_description
+                ).strip().upper()
+
+            if new_tag_name == old_tag_name and new_description == old_description:
+                continue
+            if not new_tag_name or not new_description:
+                continue
+            if new_tag_name != old_tag_name and new_tag_name in self._tags:
+                continue
+
+            self._tags.pop(old_tag_name)
+            record.tag_name = new_tag_name
+            record.description = new_description
+            self._tags[new_tag_name] = record
+
+            if old_tag_name in self._conflicted_tags:
+                self._conflicted_tags.discard(old_tag_name)
+                self._conflicted_tags.add(new_tag_name)
+
+            updated_row = dict(old_row_data)
+            updated_row["Name"] = new_tag_name
+            updated_row["Description"] = new_description
+            target_vessels = old_vessels or {"GLOBAL"}
+            for vessel in target_vessels:
+                self._queue_change(vessel=vessel, row_data=updated_row)
+            changed_tags += 1
+
+        return changed_tags
 
     def _restore_backup_from_page(self, backup_name: str) -> bool:
         """Loads selected backup after saving temporary pre-load backup."""
