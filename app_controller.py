@@ -465,23 +465,26 @@ class AppController:
         original_row: dict[str, str],
         updated_row: dict[str, str],
     ) -> None:
-        """Queues change only when updated row differs from imported row."""
-        if self._normalized_row_for_compare(original_row) != self._normalized_row_for_compare(
+        """Queues export only when Name, Description, or address actually changed."""
+        if self._export_fields_for_compare(original_row) != self._export_fields_for_compare(
             updated_row
         ):
             self._queue_change(vessel=vessel, row_data=updated_row)
 
     @staticmethod
-    def _normalized_row_for_compare(row: dict[str, str]) -> dict[str, str]:
-        """Normalizes row fields so cosmetic casing changes do not queue exports."""
-        normalized = {str(key): str(value).strip() for key, value in row.items()}
-        if "Name" in normalized:
-            normalized["Name"] = normalized["Name"].upper()
-        if "Description" in normalized:
-            normalized["Description"] = normalized["Description"].upper()
-        if "Address" in normalized:
-            normalized["Address"] = normalized["Address"].upper()
-        return normalized
+    def _export_fields_for_compare(row: dict[str, str]) -> dict[str, str]:
+        """Extracts export-relevant fields so extra Proficy columns do not false-queue."""
+        from services.address_normalizer import normalize_address
+
+        name = str(row.get("Name", "")).strip().upper()
+        description = str(row.get("Description", "")).strip().upper()
+        address = ""
+        for key in ("IOAddress", "Address", "ADDRESS", "ioaddress"):
+            value = str(row.get(key, "")).strip()
+            if value:
+                address = normalize_address(value)
+                break
+        return {"Name": name, "Description": description, "Address": address}
 
     @staticmethod
     def _extract_address(row_data: dict[str, str]) -> str:
@@ -846,6 +849,9 @@ class AppController:
                 continue
 
             existing_same_tag = self._tags.get(imported_tag)
+            before_export = (
+                existing_same_tag.proficy_export_row() if existing_same_tag is not None else None
+            )
             if (
                 existing_same_tag is not None
                 and existing_same_tag.description == imported_description
@@ -859,7 +865,7 @@ class AppController:
             )
 
             if conflict is None:
-                was_new = imported_tag not in self._tags
+                was_new = before_export is None
                 self._cross_program.import_proficy_row(
                     self._tags,
                     tag_name=imported_tag,
@@ -872,12 +878,21 @@ class AppController:
                 else:
                     summary["existing_tags_updated"] += 1
                 record = self._tags[imported_tag]
-                updated_row = record.proficy_export_row()
-                self._queue_change_if_different(
-                    vessel=vessel,
-                    original_row=original_rows[row_index],
-                    updated_row=updated_row,
-                )
+                after_export = record.proficy_export_row()
+                if was_new:
+                    # Fresh import: queue only if processing changed export fields
+                    # (e.g. filled missing description), not for identical spreadsheet rows.
+                    self._queue_change_if_different(
+                        vessel=vessel,
+                        original_row=original_rows[row_index],
+                        updated_row=after_export,
+                    )
+                elif before_export is not None:
+                    self._queue_change_if_different(
+                        vessel=vessel,
+                        original_row=before_export,
+                        updated_row=after_export,
+                    )
                 continue
 
             summary["conflicts_detected"] += 1
