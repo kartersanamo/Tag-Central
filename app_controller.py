@@ -69,6 +69,7 @@ class AppController:
         self._window.find_text_var.trace_add("write", lambda *_: self.refresh_table())
         self._window.replace_text_var.trace_add("write", lambda *_: self.refresh_table())
         self._window.find_scope_var.trace_add("write", lambda *_: self.refresh_table())
+        self._window.preview_changes_var.trace_add("write", lambda *_: self.refresh_table())
         self._window.view_conflicts_var.trace_add(
             "write", lambda *_: self._on_view_conflicts_toggle()
         )
@@ -122,12 +123,29 @@ class AppController:
         ).show()
 
     def apply_inline_find_replace(self) -> None:
-        """Applies in-app find/replace from inline controls."""
+        """Applies in-app find/replace from inline controls after confirmation."""
         find_text = self._window.find_text_var.get().strip()
         replace_text = self._window.replace_text_var.get()
         scope = self._window.find_scope_var.get()
         if not find_text:
             messagebox.showwarning("Invalid Input", "Find text cannot be empty.")
+            return
+
+        change_count = self._count_find_replace_changes(find_text, replace_text, scope)
+        if change_count == 0:
+            messagebox.showinfo(
+                "Find & Replace",
+                "No tags would be changed with the current find, replace, and scope settings.",
+            )
+            return
+
+        confirmed = messagebox.askyesno(
+            "Confirm Find & Replace",
+            f"This will update {change_count} tag(s).\n\n"
+            "Changes will be autosaved and batched for export.\n\n"
+            "Continue?",
+        )
+        if not confirmed:
             return
 
         changed_count = self._apply_find_replace(find_text, replace_text, scope)
@@ -203,6 +221,60 @@ class AppController:
     def _preview_replace(source: str, pattern: re.Pattern[str], replace_text: str) -> str:
         return pattern.sub(replace_text.upper(), source).strip().upper()
 
+    @staticmethod
+    def _matches_find_scope(record: TagRecord, find_text: str, scope: str) -> bool:
+        """True when find_text appears in the selected scope fields."""
+        query = find_text.lower()
+        if scope in {"tag", "both"} and query in record.tag_name.lower():
+            return True
+        if scope in {"description", "both"} and query in record.description.lower():
+            return True
+        return False
+
+    @staticmethod
+    def _highlight_find_text(text: str, find_text: str) -> str:
+        """Wraps case-insensitive find matches with highlight markers for display."""
+        if not find_text:
+            return text
+        pattern = re.compile(re.escape(find_text), flags=re.IGNORECASE)
+        parts: list[str] = []
+        last_index = 0
+        for match in pattern.finditer(text):
+            parts.append(text[last_index : match.start()])
+            parts.append(f"⟦{match.group()}⟧")
+            last_index = match.end()
+        parts.append(text[last_index:])
+        return "".join(parts)
+
+    @staticmethod
+    def _format_find_replace_display(
+        tag_text: str,
+        description_text: str,
+        find_text: str,
+        scope: str,
+        highlight: bool,
+    ) -> tuple[str, str]:
+        """Applies find-match highlighting to scoped columns when requested."""
+        if not highlight or not find_text:
+            return tag_text, description_text
+        display_tag = tag_text
+        display_description = description_text
+        if scope in {"tag", "both"}:
+            display_tag = AppController._highlight_find_text(tag_text, find_text)
+        if scope in {"description", "both"}:
+            display_description = AppController._highlight_find_text(
+                description_text, find_text
+            )
+        return display_tag, display_description
+
+    def _count_find_replace_changes(
+        self, find_text: str, replace_text: str, scope: str
+    ) -> int:
+        """Returns how many tags would change if find/replace were applied."""
+        pattern = re.compile(re.escape(find_text), flags=re.IGNORECASE)
+        _, change_count = self._build_live_preview_map(pattern, replace_text, scope)
+        return change_count
+
     def _build_live_preview_map(
         self,
         pattern: re.Pattern[str] | None,
@@ -214,7 +286,7 @@ class AppController:
         Returns (map[tag_name] -> (preview_tag, preview_description), change_count).
         """
         preview_map: dict[str, tuple[str, str]] = {}
-        if pattern is None:
+        if pattern is None or not replace_text:
             for tag_name, record in self._tags.items():
                 preview_map[tag_name] = (record.tag_name, record.description)
             return preview_map, 0
@@ -369,26 +441,36 @@ class AppController:
         find_text = self._window.find_text_var.get().strip()
         replace_text = self._window.replace_text_var.get()
         find_scope = self._window.find_scope_var.get()
-        preview_pattern = (
+        preview_on = self._window.preview_changes_var.get()
+        find_pattern = (
             re.compile(re.escape(find_text), flags=re.IGNORECASE) if find_text else None
         )
         preview_map, preview_changes = self._build_live_preview_map(
-            preview_pattern, replace_text, find_scope
+            find_pattern, replace_text, find_scope
         )
+        use_live_preview = bool(find_text and replace_text and preview_on)
+        find_match_count = 0
 
         for tag_name, record in self._tags.items():
             if view_conflicts_only and tag_name not in visible_conflict_scope:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
+            if find_text and not self._matches_find_scope(record, find_text, find_scope):
+                continue
 
-            preview_tag, preview_description = preview_map[tag_name]
+            find_match_count += 1
+            if use_live_preview:
+                row_tag, row_description = preview_map[tag_name]
+            else:
+                row_tag = record.tag_name
+                row_description = record.description
 
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._extract_address(record.row_data)
             peers_text = ", ".join(self._tag_conflict_peers.get(tag_name, []))
             searchable = (
-                f"{preview_tag} {preview_description} {address_text} {vessels_text} {peers_text}"
+                f"{row_tag} {row_description} {address_text} {vessels_text} {peers_text}"
             ).lower()
             if query and query not in searchable:
                 continue
@@ -417,7 +499,20 @@ class AppController:
         visible_groups: set[int] = set()
 
         for row_number, (tag_name, record) in enumerate(rows_to_show, start=1):
-            preview_tag, preview_description = preview_map[tag_name]
+            if use_live_preview:
+                row_tag, row_description = preview_map[tag_name]
+            else:
+                row_tag = record.tag_name
+                row_description = record.description
+
+            display_tag, display_description = self._format_find_replace_display(
+                row_tag,
+                row_description,
+                find_text,
+                find_scope,
+                highlight=bool(find_text),
+            )
+
             group_id = self._tag_conflict_group.get(tag_name)
             peers = self._tag_conflict_peers.get(tag_name, [])
             group_label = f"G{group_id}" if group_id is not None else ""
@@ -425,11 +520,13 @@ class AppController:
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._extract_address(record.row_data)
 
-            row_tags: tuple[str, ...] = ()
+            row_tags: list[str] = []
             if group_id is not None:
                 color_index = (group_id - 1) % len(CONFLICT_GROUP_COLORS)
-                row_tags = (f"conflict_g{color_index}",)
+                row_tags.append(f"conflict_g{color_index}")
                 visible_groups.add(group_id)
+            elif find_text:
+                row_tags.append("find_match")
 
             self._window.tree.insert(
                 "",
@@ -437,14 +534,14 @@ class AppController:
                 iid=tag_name,
                 values=(
                     row_number,
-                    preview_tag,
-                    preview_description,
+                    display_tag,
+                    display_description,
                     address_text,
                     group_label,
                     conflicts_with,
                     vessels_text,
                 ),
-                tags=row_tags,
+                tags=tuple(row_tags),
             )
 
         visible_count = len(rows_to_show)
@@ -454,7 +551,12 @@ class AppController:
             )
         else:
             self._window.status_var.set(f"{visible_count} tags")
-        self._window.set_find_replace_preview_count(preview_changes)
+        self._window.set_find_replace_status(
+            find_active=bool(find_text),
+            match_count=find_match_count,
+            change_count=preview_changes if replace_text else 0,
+            preview_on=preview_on,
+        )
 
     def _recalculate_conflicted_tags(self) -> None:
         """Builds conflict tag set and peer/group maps from current data."""

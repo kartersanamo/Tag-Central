@@ -21,7 +21,10 @@ class MainWindow:
         self.find_text_var = tk.StringVar()
         self.replace_text_var = tk.StringVar()
         self.find_scope_var = tk.StringVar(value="both")
-        self.find_replace_status_var = tk.StringVar(value="Live preview: 0 changes")
+        self.preview_changes_var = tk.BooleanVar(value=True)
+        self.find_replace_status_var = tk.StringVar(
+            value="Enter find text to filter matching rows"
+        )
 
         self.import_button: ttk.Button | None = None
         self.backups_button: ttk.Button | None = None
@@ -77,7 +80,7 @@ class MainWindow:
         self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)
 
-        find_bar = ttk.LabelFrame(main, text="Find & Replace (Live Preview)", padding=10)
+        find_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
         find_bar.pack(fill="x", pady=(10, 8))
         ttk.Label(find_bar, text="Find").pack(side="left", padx=(0, 6))
         ttk.Entry(find_bar, textvariable=self.find_text_var, width=28).pack(
@@ -96,6 +99,11 @@ class MainWindow:
             width=14,
         )
         self.find_scope_combo.pack(side="left", padx=(0, 10))
+        ttk.Checkbutton(
+            find_bar,
+            text="Preview Changes",
+            variable=self.preview_changes_var,
+        ).pack(side="left", padx=(0, 10))
         self.find_replace_apply_button = ttk.Button(find_bar, text="Apply")
         self.find_replace_apply_button.pack(side="left", padx=(0, 8))
         self.find_replace_clear_button = ttk.Button(find_bar, text="Clear")
@@ -147,6 +155,7 @@ class MainWindow:
         self.tree.column("vessels", width=260, anchor="w")
         for index, color in enumerate(CONFLICT_GROUP_COLORS):
             self.tree.tag_configure(f"conflict_g{index}", background=color)
+        self.tree.tag_configure("find_match", background="#fef3c7")
 
         y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=y_scroll.set)
@@ -175,6 +184,24 @@ class MainWindow:
         else:
             self.export_changes_button.configure(style="TButton")
 
-    def set_find_replace_preview_count(self, count: int) -> None:
-        """Updates status label for live preview changes."""
-        self.find_replace_status_var.set(f"Live preview: {count} changes")
+    def set_find_replace_status(
+        self,
+        *,
+        find_active: bool,
+        match_count: int,
+        change_count: int,
+        preview_on: bool,
+    ) -> None:
+        """Updates the find/replace status line."""
+        parts: list[str] = []
+        if find_active:
+            parts.append(f"{match_count} match{'es' if match_count != 1 else ''}")
+        if change_count > 0:
+            label = "Preview" if preview_on else "Pending"
+            parts.append(
+                f"{label}: {change_count} change{'s' if change_count != 1 else ''}"
+            )
+        if not parts:
+            self.find_replace_status_var.set("Enter find text to filter matching rows")
+            return
+        self.find_replace_status_var.set(" · ".join(parts))
