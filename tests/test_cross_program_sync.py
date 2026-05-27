@@ -46,3 +46,27 @@ class TestCrossProgramSyncService(unittest.TestCase):
         self.assertEqual(record.description, "AFT DRAFT")
         self.assertIsNotNone(export_row)
         self.assertEqual(export_row["Name"], "AFT_DRAFT")
+
+    def test_apply_after_rename_uses_stale_dialog_key(self) -> None:
+        row = CimplicityImportRow(
+            pt_id="AFT_DRAFT",
+            description=normalize_description("Aft Draft"),
+            address="%R00111",
+            row_data={"PT_ID": "AFT_DRAFT", "DESC": "Aft Draft", "ADDR": "%R00111"},
+            row_index=0,
+        )
+        self.service.align_proficy_to_cimplicity(self.tags, "AFT_DRAFT_INCHES", row, "C-LEGACY")
+        link = self.service._linker.link_cimplicity_row(self.tags, row.pt_id, row.address)
+        resolved = self.service.resolve_tag_key(
+            self.tags, row, link, preferred_key="AFT_DRAFT_INCHES"
+        )
+        self.assertEqual(resolved, "AFT_DRAFT")
+        changed, export_row = self.service.apply_cimplicity_row(
+            self.tags,
+            row,
+            "C-LEGACY",
+            "link_only",
+            canonical_tag="AFT_DRAFT_INCHES",
+        )
+        self.assertTrue(changed)
+        self.assertIsNone(export_row)

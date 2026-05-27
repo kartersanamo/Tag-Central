@@ -13,7 +13,7 @@ from models.tag_record import (
     SYNC_SYNCED,
     TagRecord,
 )
-from services.address_normalizer import normalize_address
+from services.address_normalizer import addresses_equivalent, normalize_address
 from services.cimplicity_review_queue import CimplicityReviewQueue, ReviewQueueItem
 from services.tag_link_service import LinkResult, TagLinkService
 
@@ -151,6 +151,43 @@ class CrossProgramSyncService:
             )
         return summary
 
+    def resolve_tag_key(
+        self,
+        tags: dict[str, TagRecord],
+        row: CimplicityImportRow,
+        link: LinkResult,
+        preferred_key: str | None = None,
+    ) -> str | None:
+        """
+        Finds the current dict key for a linked row.
+        Handles prior renames during the same import batch (stale dialog keys).
+        """
+        candidates: list[str] = []
+        for key in (preferred_key, link.canonical_tag, row.pt_id):
+            if key and key not in candidates:
+                candidates.append(key)
+
+        for key in candidates:
+            if key in tags:
+                return key
+
+        for tag_name, record in tags.items():
+            if record.cimplicity_pt_id == row.pt_id:
+                return tag_name
+
+        if row.address:
+            for tag_name, record in tags.items():
+                record_address = record.linked_address or TagRecord._address_from_row(
+                    record.proficy_row_data
+                )
+                if addresses_equivalent(record_address, row.address):
+                    return tag_name
+
+        if len(link.ambiguous_tags) == 1 and link.ambiguous_tags[0] in tags:
+            return link.ambiguous_tags[0]
+
+        return None
+
     def apply_cimplicity_row(
         self,
         tags: dict[str, TagRecord],
@@ -176,7 +213,7 @@ class CrossProgramSyncService:
             }
 
         link = self._linker.link_cimplicity_row(tags, row.pt_id, row.address)
-        tag_key = canonical_tag or link.canonical_tag
+        tag_key = self.resolve_tag_key(tags, row, link, preferred_key=canonical_tag)
         if tag_key is None:
             if action == "link_only":
                 return False, None

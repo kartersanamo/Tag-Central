@@ -1087,13 +1087,23 @@ class AppController:
                 summary["skipped"] += 1
                 continue
 
-            canonical_tag = decision.get("existing_tag", "")
+            stale_tag = str(decision.get("existing_tag", "")).strip().upper()
+            link = self._cross_program._linker.link_cimplicity_row(
+                self._tags, row.pt_id, row.address
+            )
+            canonical_tag = self._cross_program.resolve_tag_key(
+                self._tags, row, link, preferred_key=stale_tag or None
+            )
+            if canonical_tag is None and action not in {"skip", "flag_manual_cimplicity"}:
+                summary["skipped"] += 1
+                continue
+
             changed, export_row = self._cross_program.apply_cimplicity_row(
                 self._tags,
                 row,
                 vessel,
                 action,
-                canonical_tag=canonical_tag or None,
+                canonical_tag=canonical_tag,
             )
             if action == "flag_manual_cimplicity":
                 summary["manual_cimplicity_flags"] += 1
