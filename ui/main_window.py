@@ -77,35 +77,30 @@ class MainWindow:
         control_bar = ttk.Frame(main)
         control_bar.pack(fill="x")
 
-        self.import_proficy_button = ttk.Button(control_bar, text="Import Proficy…")
-        self.import_cimplicity_button = ttk.Button(control_bar, text="Import Cimplicity…")
+        self.import_proficy_button = ttk.Button(control_bar, text="Import Proficy")
+        self.import_cimplicity_button = ttk.Button(control_bar, text="Import Cimplicity")
         self.import_button = self.import_proficy_button
-        self.align_selected_button = ttk.Button(
-            control_bar, text="Align Selected to Cimplicity"
-        )
-        self.cimplicity_review_button = ttk.Button(
-            control_bar, text="Cimplicity Review (0)"
-        )
-        self.cimplicity_tasks_button = ttk.Button(
-            control_bar, text="Cimplicity Tasks (0)"
-        )
-        self.backups_button = ttk.Button(control_bar, text="Backups")
-        self.refresh_button = ttk.Button(control_bar, text="Refresh")
-        self.add_tag_button = ttk.Button(control_bar, text="Add Tag")
+        self.align_selected_button = ttk.Button(control_bar, text="Align Selected to Cimplicity")
+        self.cimplicity_review_button = ttk.Button(control_bar, text="Cimplicity Review (0)")
+        self.cimplicity_tasks_button = ttk.Button(control_bar, text="Cimplicity Tasks (0)")
+        self.backups_button = ttk.Button(control_bar, text="Backups", width = 6)
+        self.refresh_button = ttk.Button(control_bar, text="Refresh", width = 6)
+        self.add_tag_button = ttk.Button(control_bar, text="Add Tag", width = 6)
         self.find_replace_button = ttk.Button(control_bar, text="Find & Replace ▾")
-        self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
+        self.export_changes_button = ttk.Button(control_bar, text="Export Proficy Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
-        self.import_proficy_button.pack(side="left", padx=(0, 6))
-        self.import_cimplicity_button.pack(side="left", padx=6)
-        self.align_selected_button.pack(side="left", padx=6)
-        self.cimplicity_review_button.pack(side="left", padx=6)
-        self.cimplicity_tasks_button.pack(side="left", padx=6)
-        self.backups_button.pack(side="left", padx=6)
-        self.refresh_button.pack(side="left", padx=6)
-        self.add_tag_button.pack(side="left", padx=6)
-        self.find_replace_button.pack(side="left", padx=6)
-        self.export_changes_button.pack(side="left", padx=6)
-        self.change_tag_button.pack(side="left", padx=6)
+        
+        self.import_proficy_button.pack(side="left", padx=(0, 2))
+        self.import_cimplicity_button.pack(side="left", padx=2)
+        self.refresh_button.pack(side="left", padx=2)
+        self.cimplicity_tasks_button.pack(side="left", padx=2)
+        self.export_changes_button.pack(side="left", padx=2)
+        self.cimplicity_review_button.pack(side="left", padx=2)
+        self.align_selected_button.pack(side="left", padx=2)
+        self.backups_button.pack(side="left", padx=2)
+        self.add_tag_button.pack(side="left", padx=2)
+        self.find_replace_button.pack(side="left", padx=2)
+        self.change_tag_button.pack(side="left", padx=2)
 
         self.find_replace_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
         self.find_replace_bar.pack(fill="x", pady=(10, 8))
@@ -230,6 +225,10 @@ class MainWindow:
             self.cimplicity_tasks_button.configure(
                 text=f"Cimplicity Tasks ({count})"
             )
+            if count > 0:
+                self.cimplicity_tasks_button.configure(style="ExportPending.TButton")
+            else:
+                self.cimplicity_tasks_button.configure(style="TButton")
 
     def set_conflict_count(self, count: int) -> None:
         """Updates the View Internal Mismatches checkbox label with the current count."""
@@ -242,7 +241,7 @@ class MainWindow:
         """Updates export button text/style based on pending changes."""
         if self.export_changes_button is None:
             return
-        self.export_changes_button.configure(text=f"Export Changes ({count})")
+        self.export_changes_button.configure(text=f"Export Proficy Changes ({count})")
         if count > 0:
             self.export_changes_button.configure(style="ExportPending.TButton")
         else:
