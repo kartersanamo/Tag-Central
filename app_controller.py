@@ -63,6 +63,20 @@ class AppController:
         self._tag_conflict_group: dict[str, int] = {}
         self._view_conflict_session_tags: set[str] = set()
         self._pending_changes: dict[str, list[dict[str, object]]] = {}
+        self._sort_column = "tag_name"
+        self._sort_descending = False
+        self._column_heading_labels = {
+            "row_number": "#",
+            "tag_name": "Tag",
+            "proficy_name": "Proficy Name",
+            "cimplicity_pt_id": "Cimplicity PT_ID",
+            "description": "Description",
+            "address": "Address",
+            "sync_status": "Sync",
+            "conflict_group": "Group",
+            "conflicts_with": "Conflicts With",
+            "vessels": "Vessels",
+        }
 
         self._window = MainWindow(root)
         self._bind_events()
@@ -113,12 +127,62 @@ class AppController:
             "<<ComboboxSelected>>", lambda *_: self.refresh_table()
         )
         self._window.tree.bind("<Button-3>", self._show_context_menu)
+        for column_name in self._column_heading_labels:
+            self._window.tree.heading(
+                column_name,
+                command=lambda value=column_name: self._on_tree_heading_click(value),
+            )
         self._window.context_menu.entryconfigure(
             0, command=self.edit_selected_tag
         )
         self._window.context_menu.entryconfigure(
             1, command=self.delete_selected_tags
         )
+        self._refresh_tree_heading_sort_markers()
+
+    def _on_tree_heading_click(self, column_name: str) -> None:
+        """Sorts table by selected column and toggles direction on repeat click."""
+        if self._sort_column == column_name:
+            self._sort_descending = not self._sort_descending
+        else:
+            self._sort_column = column_name
+            self._sort_descending = False
+        self.refresh_table()
+
+    def _refresh_tree_heading_sort_markers(self) -> None:
+        """Shows active sort column and direction in header labels."""
+        assert self._window.tree
+        arrow = " ▼" if self._sort_descending else " ▲"
+        for column_name, label in self._column_heading_labels.items():
+            suffix = arrow if column_name == self._sort_column else ""
+            self._window.tree.heading(column_name, text=f"{label}{suffix}")
+
+    def _sort_rows(self, rows_to_show: list[tuple[str, TagRecord]]) -> None:
+        """Sorts visible rows by active header column."""
+
+        def sort_key(item: tuple[str, TagRecord]) -> tuple[object, str]:
+            tag_name, record = item
+            group_id = self._tag_conflict_group.get(tag_name)
+            peers = self._tag_conflict_peers.get(tag_name, [])
+
+            value_map: dict[str, object] = {
+                "row_number": tag_name,
+                "tag_name": record.tag_name,
+                "proficy_name": record.proficy_name or "",
+                "cimplicity_pt_id": record.cimplicity_pt_id or "",
+                "description": record.description,
+                "address": self._record_address(record),
+                "sync_status": self._sync_status_label(record.sync_status),
+                "conflict_group": group_id if group_id is not None else 999999,
+                "conflicts_with": ", ".join(peers),
+                "vessels": ", ".join(sorted(record.vessels)),
+            }
+            selected_value = value_map.get(self._sort_column, record.tag_name)
+            if isinstance(selected_value, str):
+                return selected_value.lower(), tag_name
+            return selected_value, tag_name
+
+        rows_to_show.sort(key=sort_key, reverse=self._sort_descending)
 
     def _show_context_menu(self, event: tk.Event) -> None:
         assert self._window.tree and self._window.context_menu
@@ -566,6 +630,7 @@ class AppController:
 
     def refresh_table(self) -> None:
         assert self._window.tree
+        self._refresh_tree_heading_sort_markers()
         self._recalculate_conflicted_tags()
         query = self._window.search_var.get().strip().lower()
         view_conflicts_only = self._window.view_conflicts_var.get()
@@ -618,24 +683,7 @@ class AppController:
                 continue
             rows_to_show.append((tag_name, record))
 
-        if view_conflicts_only:
-            active_rows = [
-                item for item in rows_to_show if item[0] in self._tag_conflict_group
-            ]
-            resolved_rows = [
-                item for item in rows_to_show if item[0] not in self._tag_conflict_group
-            ]
-            active_rows.sort(
-                key=lambda item: (
-                    self._tag_conflict_group.get(item[0], 999999),
-                    item[1].description,
-                    item[0],
-                )
-            )
-            resolved_rows.sort(key=lambda item: item[0])
-            rows_to_show = active_rows + resolved_rows
-        else:
-            rows_to_show.sort(key=lambda item: item[0])
+        self._sort_rows(rows_to_show)
 
         self._window.tree.delete(*self._window.tree.get_children())
         visible_groups: set[int] = set()
