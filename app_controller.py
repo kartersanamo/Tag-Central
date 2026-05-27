@@ -902,6 +902,10 @@ class AppController:
         record.set_cimplicity_snapshot(item.row_data, item.vessel, "manual")
         record.cimplicity_pt_id = item.pt_id
         record.sync_status = SYNC_SYNCED
+        export_row = record.proficy_export_row()
+        target_vessels = record.vessels or {item.vessel}
+        for vessel in target_vessels:
+            self._queue_change(vessel=vessel, row_data=export_row)
         self._cross_program.review_queue.remove(item.vessel, item.pt_id)
         self._persist_tags()
         self._update_review_queue_indicator()
