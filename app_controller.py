@@ -39,7 +39,6 @@ from ui.conflict_dialog import ConflictDialog
 from ui.edit_tag_dialog import EditTagDialog
 from ui.main_window import MainWindow
 from ui.missing_description_dialog import MissingDescriptionDialog
-from ui.sync_dashboard_dialog import SyncDashboardDialog
 
 
 class AppController:
@@ -89,7 +88,7 @@ class AppController:
 
     def _bind_events(self) -> None:
         assert self._window.import_proficy_button and self._window.import_cimplicity_button
-        assert self._window.sync_dashboard_button and self._window.cimplicity_review_button
+        assert self._window.align_selected_button and self._window.cimplicity_review_button
         assert self._window.program_filter_combo
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
@@ -102,7 +101,7 @@ class AppController:
 
         self._window.import_proficy_button.configure(command=self.import_proficy_spreadsheet)
         self._window.import_cimplicity_button.configure(command=self.import_cimplicity_spreadsheet)
-        self._window.sync_dashboard_button.configure(command=self.open_sync_dashboard)
+        self._window.align_selected_button.configure(command=self.align_selected_to_cimplicity)
         self._window.cimplicity_review_button.configure(command=self.open_cimplicity_review)
         self._window.import_button.configure(command=self.import_proficy_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
@@ -549,15 +548,8 @@ class AppController:
             return record.linked_address
         return self._extract_address(record.proficy_row_data)
 
-    def open_sync_dashboard(self) -> None:
-        SyncDashboardDialog(
-            self._window.root,
-            tags=self._tags,
-            review_queue_count=self._cross_program.review_queue.count(),
-            on_align_selected=self._align_tags_from_dashboard,
-        )
-
-    def _align_tags_from_dashboard(self, tag_names: list[str]) -> None:
+    def _align_tags_to_cimplicity(self, tag_names: list[str]) -> int:
+        aligned_count = 0
         for tag_name in tag_names:
             record = self._tags.get(tag_name)
             if record is None or not record.cimplicity_row_data:
@@ -575,10 +567,28 @@ class AppController:
             if export_row:
                 for vessel in record.vessels or {"GLOBAL"}:
                     self._queue_change(vessel=vessel, row_data=export_row)
+            aligned_count += 1
         self._persist_tags()
         self._update_pending_change_indicator()
         self.refresh_table()
-        messagebox.showinfo("Aligned", f"Aligned {len(tag_names)} tag(s) to Cimplicity.")
+        return aligned_count
+
+    def align_selected_to_cimplicity(self) -> None:
+        selected_tags = self._get_selected_tag_names()
+        if not selected_tags:
+            messagebox.showinfo(
+                "Selection Required",
+                "Select one or more tags in the main list to align.",
+            )
+            return
+        aligned_count = self._align_tags_to_cimplicity(selected_tags)
+        if aligned_count == 0:
+            messagebox.showinfo(
+                "No Cimplicity Link",
+                "Selected tags are not linked to Cimplicity rows.",
+            )
+            return
+        messagebox.showinfo("Aligned", f"Aligned {aligned_count} tag(s) to Cimplicity.")
 
     def open_cimplicity_review(self) -> None:
         CimplicityReviewDialog(
