@@ -17,6 +17,7 @@ class MainWindow:
         self.vessel_var = tk.StringVar(value="ALL")
         self.view_conflicts_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="0 tags")
+        self.view_conflicts_check: ttk.Checkbutton | None = None
 
         self.import_button: ttk.Button | None = None
         self.save_button: ttk.Button | None = None
@@ -76,11 +77,12 @@ class MainWindow:
         ttk.Entry(filter_bar, textvariable=self.search_var, width=40).pack(
             side="left", padx=(0, 8)
         )
-        ttk.Checkbutton(
+        self.view_conflicts_check = ttk.Checkbutton(
             filter_bar,
-            text="View Conflicts",
+            text="View Conflicts (0)",
             variable=self.view_conflicts_var,
-        ).pack(side="left", padx=(12, 0))
+        )
+        self.view_conflicts_check.pack(side="left", padx=(12, 0))
 
         table_frame = ttk.Frame(main)
         table_frame.pack(fill="both", expand=True)
@@ -106,3 +108,8 @@ class MainWindow:
 
         status = ttk.Label(main, textvariable=self.status_var, anchor="w")
         status.pack(fill="x", pady=(8, 0))
+
+    def set_conflict_count(self, count: int) -> None:
+        """Updates the View Conflicts checkbox label with the current count."""
+        if self.view_conflicts_check is not None:
+            self.view_conflicts_check.configure(text=f"View Conflicts ({count})")

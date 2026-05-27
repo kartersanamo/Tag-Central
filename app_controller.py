@@ -33,6 +33,7 @@ class AppController:
         self._window = MainWindow(root)
         self._bind_events()
         self._refresh_filter_values()
+        self._recalculate_conflicted_tags()
         self.refresh_table()
 
     def _bind_events(self) -> None:
@@ -92,6 +93,7 @@ class AppController:
 
     def refresh_table(self) -> None:
         assert self._window.tree
+        self._recalculate_conflicted_tags()
         query = self._window.search_var.get().strip().lower()
 
         self._window.tree.delete(*self._window.tree.get_children())
@@ -118,6 +120,25 @@ class AppController:
             visible_count += 1
 
         self._window.status_var.set(f"{visible_count} tags")
+
+    def _recalculate_conflicted_tags(self) -> None:
+        """Builds conflict tag set from current data state."""
+        descriptions_to_tags: dict[str, list[str]] = {}
+        for tag_name, record in self._tags.items():
+            description = record.description.strip().upper()
+            if not description:
+                continue
+            descriptions_to_tags.setdefault(description, []).append(tag_name)
+
+        recalculated: set[str] = set()
+        for tag_names in descriptions_to_tags.values():
+            if len(tag_names) > 1:
+                recalculated.update(tag_names)
+
+        if self._conflicted_tags:
+            recalculated.update(self._conflicted_tags)
+        self._conflicted_tags = recalculated
+        self._window.set_conflict_count(len(self._conflicted_tags))
 
     def import_spreadsheet(self) -> None:
         file_path = filedialog.askopenfilename(
