@@ -562,6 +562,7 @@ class AppController:
 
     def reset_vessel_filter(self) -> None:
         self._window.vessel_var.set("ALL")
+        self._window.program_filter_var.set("ALL")
         self._active_vessel_filter = None
         self.refresh_table()
 
