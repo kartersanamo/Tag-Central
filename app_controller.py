@@ -382,13 +382,13 @@ class AppController:
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
                 continue
 
-            display_tag, display_description = preview_map[tag_name]
+            preview_tag, preview_description = preview_map[tag_name]
 
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._extract_address(record.row_data)
             peers_text = ", ".join(self._tag_conflict_peers.get(tag_name, []))
             searchable = (
-                f"{display_tag} {display_description} {address_text} {vessels_text} {peers_text}"
+                f"{preview_tag} {preview_description} {address_text} {vessels_text} {peers_text}"
             ).lower()
             if query and query not in searchable:
                 continue
@@ -417,6 +417,7 @@ class AppController:
         visible_groups: set[int] = set()
 
         for row_number, (tag_name, record) in enumerate(rows_to_show, start=1):
+            preview_tag, preview_description = preview_map[tag_name]
             group_id = self._tag_conflict_group.get(tag_name)
             peers = self._tag_conflict_peers.get(tag_name, [])
             group_label = f"G{group_id}" if group_id is not None else ""
@@ -436,8 +437,8 @@ class AppController:
                 iid=tag_name,
                 values=(
                     row_number,
-                    display_tag,
-                    display_description,
+                    preview_tag,
+                    preview_description,
                     address_text,
                     group_label,
                     conflicts_with,
