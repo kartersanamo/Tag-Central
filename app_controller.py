@@ -1200,16 +1200,27 @@ class AppController:
     def _fill_missing_descriptions(
         self, rows: list[dict[str, str]], summary: dict[str, int]
     ) -> bool:
+        used_descriptions: set[str] = {
+            record.description.strip().upper()
+            for record in self._tags.values()
+            if record.description.strip()
+        }
+        for row_data in rows:
+            existing_description = row_data.get("Description", "").strip().upper()
+            if existing_description:
+                used_descriptions.add(existing_description)
+
         candidates: list[dict[str, object]] = []
         for index, row_data in enumerate(rows):
             tag_name = row_data.get("Name", "").strip().upper()
             description = row_data.get("Description", "").strip().upper()
             if tag_name and not description:
+                suggestion = self._suggester.suggest_unique(tag_name, used_descriptions)
                 candidates.append(
                     {
                         "row_index": index,
                         "tag": tag_name,
-                        "suggested": self._suggester.suggest(tag_name),
+                        "suggested": suggestion,
                     }
                 )
 

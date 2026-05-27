@@ -43,6 +43,36 @@ class DescriptionSuggester:
         text = re.sub(r"\s+", " ", text)
         return text
 
+    def suggest_unique(self, tag_name: str, used_descriptions: set[str]) -> str:
+        """
+        Returns a unique suggestion not already present in `used_descriptions`.
+        Uses a number from the tag at the end when de-duplicating.
+        """
+        suggested = self.suggest(tag_name).strip().upper() or tag_name.strip().upper()
+        base = re.sub(r"\s+#\d+$", "", suggested).strip() or suggested
+        normalized_used = {value.strip().upper() for value in used_descriptions if value.strip()}
+        if base not in normalized_used:
+            used_descriptions.add(base)
+            return base
+
+        number_hint = self._number_hint(tag_name)
+        if number_hint:
+            candidate = f"{base} {number_hint}"
+            if candidate not in normalized_used:
+                used_descriptions.add(candidate)
+                return candidate
+
+        index = 2
+        while True:
+            if number_hint:
+                candidate = f"{base} {number_hint}-{index}"
+            else:
+                candidate = f"{base} {index}"
+            if candidate not in normalized_used:
+                used_descriptions.add(candidate)
+                return candidate
+            index += 1
+
     def _map_token(self, token: str) -> str:
         if token in self._TOKEN_MAP:
             return self._TOKEN_MAP[token]
@@ -68,3 +98,8 @@ class DescriptionSuggester:
             return token
 
         return token.replace("-", " ")
+
+    @staticmethod
+    def _number_hint(tag_name: str) -> str:
+        numbers = re.findall(r"\d+", tag_name.strip().upper())
+        return numbers[-1] if numbers else ""
