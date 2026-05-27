@@ -33,6 +33,7 @@ from services.spreadsheet_loader import SpreadsheetLoader
 from services.tag_repository import TagRepository
 from services.tag_sync_service import TagSyncService
 from ui.backups_dialog import BackupsDialog
+from ui.add_tag_dialog import AddTagDialog
 from ui.cimplicity_review_dialog import CimplicityReviewDialog
 from ui.cimplicity_sync_dialog import CimplicitySyncDialog
 from ui.conflict_dialog import ConflictDialog
@@ -92,6 +93,7 @@ class AppController:
         assert self._window.program_filter_combo
         assert self._window.import_button and self._window.backups_button
         assert self._window.refresh_button and self._window.reset_filter_button
+        assert self._window.add_tag_button
         assert self._window.find_replace_button
         assert self._window.find_replace_apply_button and self._window.find_replace_clear_button
         assert self._window.find_scope_combo
@@ -106,6 +108,7 @@ class AppController:
         self._window.import_button.configure(command=self.import_proficy_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
+        self._window.add_tag_button.configure(command=self.add_new_tag)
         self._window.find_replace_button.configure(command=lambda: None)
         self._window.find_replace_apply_button.configure(command=self.apply_inline_find_replace)
         self._window.find_replace_clear_button.configure(command=self.clear_inline_find_replace)
@@ -1352,6 +1355,83 @@ class AppController:
         self._refresh_filter_values()
         self.refresh_table()
         messagebox.showinfo("Tag Updated", "Tag details were updated successfully.")
+
+    def add_new_tag(self) -> None:
+        """Creates a new tag for Proficy, Cimplicity, or both."""
+        existing_vessels = sorted(
+            {vessel for record in self._tags.values() for vessel in record.vessels}
+        )
+        created = AddTagDialog(self._window.root, existing_vessels).show()
+        if created is None:
+            return
+
+        tag_name = str(created["tag_name"]).strip().upper()
+        description = str(created["description"]).strip().upper()
+        address = str(created["address"]).strip().upper()
+        vessels = set(created["vessels"]) or {"GLOBAL"}
+        program = str(created["program"]).strip().lower()
+        queue_proficy = bool(created["queue_proficy"])
+
+        if not tag_name:
+            messagebox.showwarning("Invalid Tag", "Tag name cannot be empty.")
+            return
+        if not description:
+            messagebox.showwarning("Invalid Description", "Description cannot be empty.")
+            return
+        if tag_name in self._tags:
+            messagebox.showerror("Duplicate Tag", "That tag already exists.")
+            return
+        if program not in {"proficy", "cimplicity", "both"}:
+            messagebox.showwarning("Invalid Program", "Program must be Proficy, Cimplicity, or Both.")
+            return
+
+        record = TagRecord(
+            tag_name=tag_name,
+            description=description,
+            vessels=set(vessels),
+        )
+        if address:
+            record.linked_address = address
+
+        if program in {"proficy", "both"}:
+            row_data = {
+                "Name": tag_name,
+                "Description": description,
+            }
+            if address:
+                row_data["IOAddress"] = address
+                row_data["Address"] = address
+            record.set_proficy_snapshot(row_data, next(iter(vessels), "GLOBAL"))
+            record.sync_status = SYNC_PROFICY_ONLY
+
+        if program in {"cimplicity", "both"}:
+            cim_row = {
+                "PT_ID": tag_name,
+                "DESC": description,
+            }
+            if address:
+                cim_row["ADDR"] = address
+            record.set_cimplicity_snapshot(cim_row, next(iter(vessels), "GLOBAL"), "manual")
+            record.cimplicity_pt_id = tag_name
+            if program == "both":
+                record.sync_status = SYNC_SYNCED
+            else:
+                record.sync_status = SYNC_NEEDS_ALIGN
+
+        self._tags[tag_name] = record
+        self._persist_tags()
+
+        if queue_proficy and program in {"proficy", "both"}:
+            export_row = record.proficy_export_row()
+            for vessel in vessels:
+                self._queue_change(vessel=vessel, row_data=export_row)
+
+        self._refresh_filter_values()
+        self.refresh_table()
+        messagebox.showinfo(
+            "Tag Added",
+            f"Created tag '{tag_name}' for {program.upper()} and updated the main list.",
+        )
 
     def delete_selected_tags(self) -> None:
         """Deletes one or multiple selected tags with confirmation."""

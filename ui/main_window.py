@@ -36,6 +36,7 @@ class MainWindow:
         self.backups_button: ttk.Button | None = None
         self.refresh_button: ttk.Button | None = None
         self.export_changes_button: ttk.Button | None = None
+        self.add_tag_button: ttk.Button | None = None
         self.find_replace_button: ttk.Button | None = None
         self.find_replace_apply_button: ttk.Button | None = None
         self.find_replace_clear_button: ttk.Button | None = None
@@ -84,6 +85,7 @@ class MainWindow:
         )
         self.backups_button = ttk.Button(control_bar, text="Backups")
         self.refresh_button = ttk.Button(control_bar, text="Refresh")
+        self.add_tag_button = ttk.Button(control_bar, text="Add Tag")
         self.find_replace_button = ttk.Button(control_bar, text="Find & Replace")
         self.export_changes_button = ttk.Button(control_bar, text="Export Changes (0)")
         self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
@@ -93,6 +95,7 @@ class MainWindow:
         self.cimplicity_review_button.pack(side="left", padx=8)
         self.backups_button.pack(side="left", padx=8)
         self.refresh_button.pack(side="left", padx=8)
+        self.add_tag_button.pack(side="left", padx=8)
         self.find_replace_button.pack(side="left", padx=8)
         self.export_changes_button.pack(side="left", padx=8)
         self.change_tag_button.pack(side="left", padx=8)
