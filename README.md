@@ -13,6 +13,47 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Building installers
+
+Branded builds bundle the **Tag Center** icon, version, and app metadata. User data (database, exports, backups) is stored outside the app bundle:
+
+| Platform | User data location |
+|----------|-------------------|
+| macOS | `~/Library/Application Support/TagCenter/` |
+| Windows | `%APPDATA%\TagCenter\` |
+
+### macOS (.app)
+
+On a Mac, from the project root:
+
+```bash
+chmod +x build-mac.sh
+./build-mac.sh
+```
+
+Output: `dist/Tag Center.app`
+
+### Windows (.exe)
+
+On Windows, from the project root in PowerShell:
+
+```powershell
+.\build-windows.ps1
+```
+
+Or double-click `build-windows.bat`.
+
+Output: `dist\Tag Center.exe`
+
+### Icons
+
+Source artwork: `assets/logo-1024.png`. Regenerate platform icons with:
+
+```bash
+pip install pillow
+python scripts/generate_icons.py
+```
+
 ## Typical workflow
 
 1. **Import Proficy** — preview dry-run summary, then apply. Resolve import conflicts if prompted.

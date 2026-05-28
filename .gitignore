@@ -1,5 +1,8 @@
 .venv/
 myenv/
+build/
+dist/
+*.spec.bak
 __pycache__/
 *.py[cod]
 *$py.class

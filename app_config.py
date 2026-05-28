@@ -2,18 +2,24 @@
 
 from pathlib import Path
 
-APP_TITLE = "Tag Central"
+from app_identity import APP_NAME, APP_VERSION, ensure_user_data_layout, is_frozen, user_data_dir
+
+APP_TITLE = APP_NAME
 WINDOW_SIZE = "1480x760"
 MIN_WINDOW_SIZE = (1100, 620)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DATABASE_FILE = PROJECT_ROOT / "tags.csv"
-EXPORT_FOLDER = PROJECT_ROOT / "exports"
-BACKUP_FOLDER = PROJECT_ROOT / "backups"
-ALIAS_RULES_FILE = PROJECT_ROOT / "alias_rules.json"
-CIMPLICITY_REVIEW_QUEUE_FILE = PROJECT_ROOT / "cimplicity_review_queue.json"
-CIMPLICITY_MANUAL_REPORT_FILE = PROJECT_ROOT / "cimplicity_manual_report.json"
-CIMPLICITY_MANUAL_TASKS_FILE = PROJECT_ROOT / "cimplicity_manual_tasks.json"
+_DATA_ROOT = user_data_dir() if is_frozen() else PROJECT_ROOT
+if is_frozen():
+    ensure_user_data_layout()
+
+DATABASE_FILE = _DATA_ROOT / "tags.csv"
+EXPORT_FOLDER = _DATA_ROOT / "exports"
+BACKUP_FOLDER = _DATA_ROOT / "backups"
+ALIAS_RULES_FILE = _DATA_ROOT / "alias_rules.json"
+CIMPLICITY_REVIEW_QUEUE_FILE = _DATA_ROOT / "cimplicity_review_queue.json"
+CIMPLICITY_MANUAL_REPORT_FILE = _DATA_ROOT / "cimplicity_manual_report.json"
+CIMPLICITY_MANUAL_TASKS_FILE = _DATA_ROOT / "cimplicity_manual_tasks.json"
 
 DEFAULT_TABLE_COLUMNS = (
     "row_number",
