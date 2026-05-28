@@ -1432,7 +1432,7 @@ class AppController:
             address_text = self._record_address(record)
             display_tag, display_description, address_text = (
                 self._emphasize_matching_value(
-                    tag_name, display_tag, display_description, address_text
+                    tag_name, record, display_tag, display_description, address_text
                 )
             )
             payloads.append(
@@ -1546,16 +1546,50 @@ class AppController:
     def _emphasize_matching_value(
         self,
         tag_name: str,
+        record: TagRecord,
         display_tag: str,
         display_description: str,
         address_text: str,
     ) -> tuple[str, str, str]:
+        peers = self._tag_conflict_peers.get(tag_name, [])
+        description_match = False
+        address_match = False
+        prefix_match = False
+
+        own_description = record.description.strip().upper()
+        own_address = self._record_address(record).strip().upper()
+        own_prefix = tag_name.strip().upper().split("_")[0]
+
+        for peer_tag in peers:
+            peer = self._tags.get(peer_tag)
+            if peer is None:
+                continue
+            if (
+                own_description
+                and own_description == peer.description.strip().upper()
+            ):
+                description_match = True
+            peer_address = self._record_address(peer).strip().upper()
+            if own_address and own_address == peer_address:
+                address_match = True
+            peer_prefix = peer_tag.strip().upper().split("_")[0]
+            if own_prefix and own_prefix == peer_prefix:
+                prefix_match = True
+
+        # Fallback to mismatch type if peer set is unavailable in current view.
         mismatch_type = self._tag_mismatch_type.get(tag_name, "")
-        if mismatch_type == MISMATCH_DUPLICATE_DESCRIPTION:
+        if not description_match and mismatch_type == MISMATCH_DUPLICATE_DESCRIPTION:
+            description_match = True
+        if not address_match and mismatch_type == MISMATCH_SHARED_ADDRESS:
+            address_match = True
+        if not prefix_match and mismatch_type == MISMATCH_PT_ID_PREFIX:
+            prefix_match = True
+
+        if description_match:
             display_description = self._pseudo_bold(display_description)
-        elif mismatch_type == MISMATCH_SHARED_ADDRESS:
+        if address_match:
             address_text = self._pseudo_bold(address_text)
-        elif mismatch_type == MISMATCH_PT_ID_PREFIX:
+        if prefix_match:
             display_tag = self._pseudo_bold(display_tag)
         return display_tag, display_description, address_text
 
@@ -1671,7 +1705,7 @@ class AppController:
             cimplicity_pt = record.cimplicity_pt_id or ""
             sync_label = self._sync_status_label(record.sync_status)
             display_tag, display_description, address_text = self._emphasize_matching_value(
-                tag_name, display_tag, display_description, address_text
+                tag_name, record, display_tag, display_description, address_text
             )
 
             row_tags = self._row_style_tags(tag_name, record, group_label, bool(find_text))
