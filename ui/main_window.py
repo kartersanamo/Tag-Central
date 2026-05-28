@@ -19,6 +19,7 @@ class MainWindow:
         self.view_conflicts_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="0 tags")
         self.view_conflicts_check: ttk.Checkbutton | None = None
+        self.array_expand_toggle_button: ttk.Button | None = None
         self.find_text_var = tk.StringVar()
         self.replace_text_var = tk.StringVar()
         self.find_scope_var = tk.StringVar(value="both")
@@ -162,7 +163,7 @@ class MainWindow:
         self.program_filter_combo.pack(side="left", padx=(0, 18))
 
         ttk.Label(filter_bar, text="Search").pack(side="left", padx=(0, 8))
-        ttk.Entry(filter_bar, textvariable=self.search_var, width=40).pack(
+        ttk.Entry(filter_bar, textvariable=self.search_var, width=30).pack(
             side="left", padx=(0, 8)
         )
         self.view_conflicts_check = ttk.Checkbutton(
@@ -170,7 +171,13 @@ class MainWindow:
             text="View Internal Mismatches (0)",
             variable=self.view_conflicts_var,
         )
-        self.view_conflicts_check.pack(side="left", padx=(12, 0))
+        self.view_conflicts_check.pack(side="left", padx=(8, 6))
+        self.array_expand_toggle_button = ttk.Button(
+            filter_bar,
+            text="Expand All",
+            width=12,
+        )
+        self.array_expand_toggle_button.pack(side="left", padx=(0, 0))
 
         table_frame = ttk.Frame(main)
         table_frame.pack(fill="both", expand=True)

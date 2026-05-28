@@ -147,6 +147,7 @@ class AppController:
         assert self._window.export_changes_button
         assert self._window.review_export_queue_button
         assert self._window.change_tag_button and self._window.vessel_combo
+        assert self._window.array_expand_toggle_button
         assert self._window.tree and self._window.context_menu
 
         self._window.import_proficy_button.configure(command=self.import_proficy_spreadsheet)
@@ -171,6 +172,9 @@ class AppController:
         )
         self._window.reset_filter_button.configure(command=self.reset_vessel_filter)
         self._window.change_tag_button.configure(command=self.edit_selected_tag)
+        self._window.array_expand_toggle_button.configure(
+            command=self.toggle_all_array_indices
+        )
 
         self._window.search_var.trace_add("write", lambda *_: self.refresh_table())
         self._window.find_text_var.trace_add("write", lambda *_: self.refresh_table())
@@ -1259,9 +1263,22 @@ class AppController:
 
     def refresh_table(self) -> None:
         assert self._window.tree
+        assert self._window.array_expand_toggle_button
         self._refresh_tree_heading_sort_markers()
         self._recalculate_conflicted_tags()
         self._rebuild_array_index_map()
+        if not self._array_children_by_base:
+            self._window.array_expand_toggle_button.configure(
+                text="Expand All", state="disabled"
+            )
+        elif len(self._expanded_array_bases) >= len(self._array_children_by_base):
+            self._window.array_expand_toggle_button.configure(
+                text="Collapse All", state="normal"
+            )
+        else:
+            self._window.array_expand_toggle_button.configure(
+                text="Expand All", state="normal"
+            )
         query = self._window.search_var.get().strip().lower()
         view_conflicts_only = self._window.view_conflicts_var.get()
 
@@ -1528,6 +1545,17 @@ class AppController:
             self._expanded_array_bases.discard(tag_name)
         else:
             self._expanded_array_bases.add(tag_name)
+        self.refresh_table()
+
+    def toggle_all_array_indices(self) -> None:
+        """Expands/collapses all array parent tags in one click."""
+        self._rebuild_array_index_map()
+        if not self._array_children_by_base:
+            return
+        if len(self._expanded_array_bases) >= len(self._array_children_by_base):
+            self._expanded_array_bases.clear()
+        else:
+            self._expanded_array_bases = set(self._array_children_by_base.keys())
         self.refresh_table()
 
     def _apply_table_row_payloads(
