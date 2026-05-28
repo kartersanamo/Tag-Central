@@ -38,17 +38,13 @@ def user_data_dir() -> Path:
 
 def export_dir(*, project_root: Path | None = None) -> Path:
     """
-    Folder for Proficy/Cimplicity export CSVs — sibling to user data, easy to find.
+    Folder for Proficy/Cimplicity export CSVs in the user's home directory.
 
-    Packaged app (macOS): ~/Library/Application Support/Tag Center Exports/
-    Packaged app (Windows): %APPDATA%\\Tag Center Exports\\
-    Development: <parent of repo>/Tag Central Exports/
+    macOS / Linux / dev: ~/Exports/
+    Windows: %USERPROFILE%\\Exports\\
     """
-    export_folder_name = f"{APP_NAME} Exports"
-    if is_frozen():
-        return user_data_dir().parent / export_folder_name
-    root = project_root or Path(__file__).resolve().parent
-    return root.parent / export_folder_name
+    del project_root  # kept for API compatibility with app_config
+    return Path.home() / "Exports"
 
 
 def assets_dir() -> Path:

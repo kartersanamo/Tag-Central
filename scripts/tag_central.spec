@@ -29,6 +29,7 @@ def _project_hiddenimports() -> list[str]:
 # Lazy-import pandas/openpyxl at runtime; list them explicitly without collecting all submodules.
 hiddenimports = _project_hiddenimports() + [
     "pandas",
+    "pandas.plotting",
     "openpyxl",
     "pandas._libs.tslibs.timedeltas",
     "pandas._libs.tslibs.nattype",
@@ -45,7 +46,6 @@ excludes = [
     "notebook",
     "sphinx",
     "pandas.tests",
-    "pandas.plotting",
     "tkinter.test",
     "setuptools",
     "distutils",

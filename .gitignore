@@ -8,7 +8,6 @@ __pycache__/
 *$py.class
 *.csv
 exports/*
-../Tag Central Exports/
 backups/*
 cimplicity_review_queue.json
 cimplicity_manual_tasks.json

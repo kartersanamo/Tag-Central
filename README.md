@@ -19,8 +19,8 @@ Branded builds bundle the **Tag Center** icon, version, and app metadata. Data i
 
 | Platform | Tag database & backups | Export CSVs |
 |----------|------------------------|-------------|
-| macOS | `~/Library/Application Support/TagCenter/` | `~/Library/Application Support/Tag Center Exports/` |
-| Windows | `%APPDATA%\TagCenter\` | `%APPDATA%\Tag Center Exports\` |
+| macOS | `~/Library/Application Support/TagCenter/` | `~/Exports/` |
+| Windows | `%APPDATA%\TagCenter\` | `%USERPROFILE%\Exports\` |
 
 ### macOS (.app)
 
@@ -129,7 +129,7 @@ python scripts/generate_icons.py
 | `cimplicity_manual_tasks.json` | Manual Cimplicity work checklist |
 | `alias_rules.json` | Prefix alias pairs for linking |
 | `backups/` | DB and JSON snapshots |
-| **Tag Center Exports/** (sibling folder) | Proficy batch CSVs and Cimplicity manual reports — next to `TagCenter` (packaged) or next to the project folder (dev) |
+| **`~/Exports/`** | Proficy batch CSVs and Cimplicity manual reports (Finder: Go → Home, open `Exports`) |
 
 ### Proficy import columns
 
