@@ -2666,7 +2666,6 @@ class AppController:
 
         self._refresh_filter_values()
         self.refresh_table()
-        messagebox.showinfo("Tag Updated", "Tag details were updated successfully.")
 
     def add_new_tag(self) -> None:
         """Creates a new tag for Proficy, Cimplicity, or both."""
