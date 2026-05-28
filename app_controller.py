@@ -2943,8 +2943,13 @@ class AppController:
 
     def export_pending_changes(self) -> bool:
         """Writes all pending vessel batches to export files."""
+        root = self._window.root
         if self._export_queue.count() == 0:
-            messagebox.showinfo("No Pending Changes", "There are no pending changes to export.")
+            messagebox.showinfo(
+                "No Pending Changes",
+                "There are no pending changes to export.",
+                parent=root,
+            )
             return True
         debug_logger.log(
             "export_queue",
@@ -2955,23 +2960,48 @@ class AppController:
 
         snapshot = self._export_queue.all_entries()
         exports = self._export_queue.to_legacy_exports()
-        loading_export = LoadingDialog(self._window.root, title="Exporting Changes...")
+        loading_export = LoadingDialog(root, title="Exporting Changes...")
         loading_export.show("Writing export batch files...")
+        written_paths: list = []
+        pending_count = len(snapshot)
         try:
             written_paths = self._export_service.write_exports(exports)
-            pending_count = len(snapshot)
+            if not written_paths:
+                raise RuntimeError(
+                    "No export files were written. Check that the export folder exists "
+                    f"and is writable:\n{EXPORT_FOLDER}"
+                )
             self._export_queue.clear()
             self._update_pending_change_indicator()
-            rendered_paths = "\n".join(str(path) for path in written_paths)
+        except Exception as error:
+            messagebox.showerror(
+                "Export Failed",
+                f"Could not write Proficy export files.\n\n{error}\n\n"
+                f"Export folder:\n{EXPORT_FOLDER}",
+                parent=root,
+            )
+            debug_logger.log(
+                "export_queue",
+                "Export failed",
+                error=str(error),
+                export_folder=str(EXPORT_FOLDER),
+            )
+            return False
         finally:
             loading_export.close()
+
+        rendered_paths = "\n".join(str(path) for path in written_paths)
         messagebox.showinfo(
             "Changes Exported",
-            f"Exported {pending_count} changes.\n\nFiles:\n{rendered_paths}",
+            f"Exported {pending_count} change(s).\n\nFiles:\n{rendered_paths}\n\n"
+            f"Folder:\n{EXPORT_FOLDER}",
+            parent=root,
         )
+        self._reveal_export_folder()
         if messagebox.askyesno(
             "Validate Export",
             "Validate the exported CSV files against the queued changes?",
+            parent=root,
         ):
             self._validate_export_files(written_paths, snapshot)
         debug_logger.log(
@@ -2981,6 +3011,25 @@ class AppController:
             files=[str(path) for path in written_paths],
         )
         return True
+
+    def _reveal_export_folder(self) -> None:
+        """Opens the export folder in Finder / Explorer when possible."""
+        try:
+            export_path = EXPORT_FOLDER.resolve()
+            export_path.mkdir(parents=True, exist_ok=True)
+            if sys.platform == "darwin":
+                import subprocess
+
+                subprocess.run(
+                    ["open", str(export_path)],
+                    check=False,
+                )
+            elif sys.platform == "win32":
+                import os
+
+                os.startfile(export_path)  # type: ignore[attr-defined]
+        except OSError:
+            pass
 
     def _validate_export_files(
         self,

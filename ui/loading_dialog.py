@@ -30,7 +30,12 @@ class LoadingDialog:
 
     def show(self, status_text: str) -> None:
         self.update_status(status_text)
-        self._window.grab_set()
+        self._window.lift()
+        self._window.attributes("-topmost", True)
+        try:
+            self._window.grab_set()
+        except tk.TclError:
+            pass
         self._window.update()
 
     def update_status(self, status_text: str) -> None:
@@ -41,11 +46,15 @@ class LoadingDialog:
         try:
             self._progress.stop()
         except tk.TclError:
-            return
+            pass
         try:
             if self._window.winfo_exists():
-                self._window.grab_release()
+                try:
+                    self._window.grab_release()
+                except tk.TclError:
+                    pass
+                self._window.attributes("-topmost", False)
                 self._window.destroy()
         except tk.TclError:
-            return
+            pass
 

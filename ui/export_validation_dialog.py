@@ -42,3 +42,5 @@ class ExportValidationDialog:
         ttk.Button(self._window, text="Close", command=self._window.destroy).pack(
             pady=(0, 14)
         )
+        self._window.grab_set()
+        self._window.wait_window()
