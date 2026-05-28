@@ -341,12 +341,10 @@ class AppController:
         if not item_id:
             return
         tag_name = self._canonical_tag_name(item_id)
-        if tag_name and self._is_array_parent(tag_name):
-            if tag_name in self._expanded_array_bases:
-                self._expanded_array_bases.discard(tag_name)
-            else:
-                self._expanded_array_bases.add(tag_name)
-            self.refresh_table()
+        if not tag_name:
+            return
+        self._window.tree.selection_set(tag_name)
+        self.edit_selected_tag()
 
     def _selected_mismatch_group_tags(self, tag_names: list[str]) -> list[str]:
         """Returns sorted tags in the clicked/selected mismatch group."""
