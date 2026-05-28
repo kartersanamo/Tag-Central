@@ -83,7 +83,6 @@ class AppController:
         root: tk.Tk,
         *,
         startup_status: Callable[[str], None] | None = None,
-        *,
         skip_initial_refresh: bool = False,
     ) -> None:
         def status(message: str) -> None:

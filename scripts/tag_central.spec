@@ -8,8 +8,26 @@ ROOT = Path(SPEC).resolve().parent.parent
 
 block_cipher = None
 
+_SKIP_DIRS = {"tests", "scripts", ".venv", "build", "dist", "__pycache__"}
+
+
+def _project_hiddenimports() -> list[str]:
+    """Bundle all app packages; main.py lazy-imports after splash so Analysis misses them."""
+    modules: list[str] = []
+    for py_file in ROOT.rglob("*.py"):
+        if any(part in _SKIP_DIRS for part in py_file.parts):
+            continue
+        if py_file.name in {"run_tests.py", "generate_icons.py"}:
+            continue
+        relative = py_file.relative_to(ROOT)
+        if relative.name == "__init__.py":
+            continue
+        modules.append(".".join(relative.with_suffix("").parts))
+    return sorted(set(modules))
+
+
 # Lazy-import pandas/openpyxl at runtime; list them explicitly without collecting all submodules.
-hiddenimports = [
+hiddenimports = _project_hiddenimports() + [
     "pandas",
     "openpyxl",
     "pandas._libs.tslibs.timedeltas",
