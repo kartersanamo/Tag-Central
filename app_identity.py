@@ -36,15 +36,33 @@ def user_data_dir() -> Path:
     return base / APP_NAME.replace(" ", "")
 
 
+def app_install_dir() -> Path:
+    """
+    Directory where the user placed the application (parent of the .app or install folder).
+
+    macOS: folder containing Tag Center.app (e.g. ~/Downloads if the app lives there)
+    Windows: folder containing the Tag Center onedir (sibling to Tag Center.exe's folder)
+    Development: parent of the project repository
+    """
+    if is_frozen():
+        executable = Path(sys.executable).resolve()
+        if sys.platform == "darwin":
+            # .../Tag Center.app/Contents/MacOS/Tag Center
+            return executable.parent.parent.parent.parent
+        # .../Tag Center/Tag Center.exe (onedir)
+        return executable.parent.parent
+    root = Path(__file__).resolve().parent
+    return root.parent
+
+
 def export_dir(*, project_root: Path | None = None) -> Path:
     """
-    Folder for Proficy/Cimplicity export CSVs in the user's home directory.
+    Folder for Proficy/Cimplicity export CSVs next to where the app is installed.
 
-    macOS / Linux / dev: ~/Exports/
-    Windows: %USERPROFILE%\\Exports\\
+    Example: ~/Downloads/Tag Center.app → ~/Downloads/Exports/
     """
     del project_root  # kept for API compatibility with app_config
-    return Path.home() / "Exports"
+    return app_install_dir() / "Exports"
 
 
 def assets_dir() -> Path:
