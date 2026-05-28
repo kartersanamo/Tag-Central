@@ -94,7 +94,6 @@ class AppController:
         self._tag_conflict_peers: dict[str, list[str]] = {}
         self._tag_mismatch_group_label: dict[str, str] = {}
         self._tag_mismatch_type: dict[str, str] = {}
-        self._view_conflict_session_tags: set[str] = set()
         self._export_queue = ExportQueueService()
         self._export_validator = ExportValidationService()
         self._mismatch_service = InternalMismatchService()
@@ -567,7 +566,6 @@ class AppController:
 
         self._persist_tags()
         self._recalculate_conflicted_tags()
-        self._view_conflict_session_tags.update(self._conflicted_tags)
         self._update_manual_tasks_indicator()
         self._refresh_filter_values()
         self.refresh_table()
@@ -744,7 +742,6 @@ class AppController:
                 self._tag_conflict_peers.pop(tag_name, None)
                 self._tag_mismatch_group_label.pop(tag_name, None)
                 self._tag_mismatch_type.pop(tag_name, None)
-                self._view_conflict_session_tags.discard(tag_name)
 
             loading_delete.update_status("Saving deletion changes...")
             self._persist_tags()
@@ -1242,7 +1239,7 @@ class AppController:
         """Tracks internal-mismatch view session behavior for inline resolution."""
         if self._window.view_conflicts_var.get():
             self._recalculate_conflicted_tags()
-            self._view_conflict_session_tags = set(self._conflicted_tags)
+            self._expand_arrays_for_conflicted_tags()
             if self._sort_before_internal_mismatches is None:
                 self._sort_before_internal_mismatches = (
                     self._sort_column,
@@ -1251,7 +1248,6 @@ class AppController:
             self._sort_column = "conflict_group"
             self._sort_descending = False
         else:
-            self._view_conflict_session_tags.clear()
             if self._sort_before_internal_mismatches is not None:
                 self._sort_column, self._sort_descending = (
                     self._sort_before_internal_mismatches
@@ -1279,12 +1275,9 @@ class AppController:
             )
         query = self._window.search_var.get().strip().lower()
         view_conflicts_only = self._window.view_conflicts_var.get()
-
+        visible_conflict_scope = self._conflicted_tags
         if view_conflicts_only:
-            self._view_conflict_session_tags.update(self._conflicted_tags)
-            visible_conflict_scope = self._view_conflict_session_tags
-        else:
-            visible_conflict_scope = self._conflicted_tags
+            self._expand_arrays_for_conflicted_tags()
 
         rows_to_show: list[tuple[str, TagRecord]] = []
         find_text = self._window.find_text_var.get().strip()
@@ -1304,7 +1297,8 @@ class AppController:
             array_base = self._array_base_name(tag_name)
             if array_base and array_base in self._array_children_by_base:
                 if array_base not in self._expanded_array_bases:
-                    continue
+                    if not (view_conflicts_only and tag_name in visible_conflict_scope):
+                        continue
             if view_conflicts_only and tag_name not in visible_conflict_scope:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
@@ -1472,6 +1466,13 @@ class AppController:
         if find_active:
             return ("find_match",)
         return ()
+
+    def _expand_arrays_for_conflicted_tags(self) -> None:
+        """Expands array parents so conflicted index rows are visible in the table."""
+        for tag_name in self._conflicted_tags:
+            base = self._array_base_name(tag_name)
+            if base and base in self._array_children_by_base:
+                self._expanded_array_bases.add(base)
 
     def _rebuild_array_index_map(self) -> None:
         """Builds base->children map for array index tags and prunes stale expansions."""
@@ -1730,9 +1731,12 @@ class AppController:
 
         visible_count = len(rows_to_show)
         if view_conflicts_only:
-            self._window.status_var.set(
-                f"{visible_count} internal mismatch tags in {len(visible_labels)} groups"
-            )
+            if not self._conflicted_tags:
+                self._window.status_var.set("No internal mismatches remain")
+            else:
+                self._window.status_var.set(
+                    f"{visible_count} internal mismatch tags in {len(visible_labels)} groups"
+                )
         else:
             self._window.status_var.set(f"{visible_count} tags")
         self._window.set_find_replace_status(
@@ -2827,7 +2831,6 @@ class AppController:
                 self._tag_conflict_peers.pop(tag_name, None)
                 self._tag_mismatch_group_label.pop(tag_name, None)
                 self._tag_mismatch_type.pop(tag_name, None)
-                self._view_conflict_session_tags.discard(tag_name)
 
             loading_delete.update_status("Saving deletion changes...")
             self._persist_tags()
