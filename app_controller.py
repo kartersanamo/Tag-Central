@@ -60,6 +60,7 @@ from ui.edit_tag_dialog import EditTagDialog
 from ui.loading_dialog import LoadingDialog
 from ui.main_window import MainWindow
 from ui.cimplicity_link_report_dialog import CimplicityLinkReportDialog
+from ui.ambiguous_address_resolver_dialog import AmbiguousAddressResolverDialog
 from ui.export_queue_dialog import ExportQueueDialog
 from ui.export_validation_dialog import ExportValidationDialog
 from ui.import_dry_run_dialog import ImportDryRunDialog
@@ -1844,8 +1845,24 @@ class AppController:
             ),
         }
 
+        ambiguous_rows: list[dict[str, str]] = []
         dialog_rows: list[dict[str, str]] = []
         for action in analysis.actionable:
+            if action.issue.startswith("ambiguous_address:"):
+                candidate_tags = action.issue.split(":", 1)[1]
+                ambiguous_rows.append(
+                    {
+                        "action": "align_selected",
+                        "pt_id": action.pt_id,
+                        "cimplicity_description": action.cimplicity_description,
+                        "address": action.address,
+                        "candidate_tags": candidate_tags,
+                        "selected_tag": action.existing_tag,
+                        "row_index": str(action.row_index),
+                        "issue": action.issue,
+                    }
+                )
+                continue
             dialog_rows.append(
                 {
                     "action": action.default_action,
@@ -1861,6 +1878,91 @@ class AppController:
             )
 
         decisions: list[dict[str, str]] = []
+        if ambiguous_rows:
+            ambiguous_dialog = AmbiguousAddressResolverDialog(self._window.root)
+            ambiguous_result = ambiguous_dialog.resolve_rows(
+                vessel=vessel, rows=ambiguous_rows
+            )
+            ambiguous_dialog.close()
+            if ambiguous_result is None:
+                debug_logger.log(
+                    "import_flow",
+                    "Ambiguous address resolver cancelled",
+                    vessel=vessel,
+                    ambiguous_rows=len(ambiguous_rows),
+                )
+                return
+
+            loading_ambiguous = LoadingDialog(
+                self._window.root,
+                title="Resolving Ambiguous Address Matches...",
+            )
+            loading_ambiguous.show("Applying ambiguous match resolutions...")
+            try:
+                for index, row in enumerate(ambiguous_result, start=1):
+                    if index == 1 or index % 20 == 0:
+                        loading_ambiguous.update_status(
+                            f"Resolving ambiguous rows... {index}/{len(ambiguous_result)}"
+                        )
+                    row_index = int(row.get("row_index", "-1"))
+                    pt_id = str(row.get("pt_id", "")).strip().upper()
+                    selected_tag = str(row.get("selected_tag", "")).strip().upper()
+                    raw_candidates = str(row.get("candidate_tags", ""))
+                    candidates = [
+                        item.strip().upper()
+                        for item in raw_candidates.split(",")
+                        if item.strip()
+                    ]
+                    if selected_tag not in candidates and candidates:
+                        selected_tag = candidates[0]
+                    action_name = str(row.get("action", "skip")).strip().lower()
+                    base_action = "skip"
+                    if action_name in {"align_selected", "merge_then_align"}:
+                        base_action = "align_proficy"
+                    elif action_name == "link_only_selected":
+                        base_action = "link_only"
+                    elif action_name == "flag_manual_cimplicity":
+                        base_action = "flag_manual_cimplicity"
+
+                    if (
+                        action_name == "merge_then_align"
+                        and selected_tag
+                        and selected_tag in self._tags
+                    ):
+                        for candidate in candidates:
+                            if candidate == selected_tag:
+                                continue
+                            if candidate not in self._tags:
+                                continue
+                            try:
+                                merged = self._merge_service.merge_tags(
+                                    self._tags, selected_tag, candidate
+                                )
+                            except KeyError:
+                                continue
+                            export_row = merged.proficy_export_row()
+                            for tag_vessel in merged.vessels or {"GLOBAL"}:
+                                self._queue_change(tag_vessel, export_row)
+                            debug_logger.log(
+                                "conflicts",
+                                "Merged ambiguous address duplicate",
+                                selected_tag=selected_tag,
+                                removed_tag=candidate,
+                                pt_id=pt_id,
+                            )
+
+                    decisions.append(
+                        {
+                            "action": base_action,
+                            "pt_id": pt_id,
+                            "row_index": str(row_index),
+                            "existing_tag": selected_tag,
+                            "issue": str(row.get("issue", "")),
+                        }
+                    )
+            finally:
+                loading_ambiguous.close()
+
         if dialog_rows:
             sync_dialog = CimplicitySyncDialog(self._window.root)
             result = sync_dialog.resolve_rows(vessel=vessel, rows=dialog_rows)
@@ -1873,7 +1975,7 @@ class AppController:
                     actionable_rows=len(dialog_rows),
                 )
                 return
-            decisions = result
+            decisions.extend(result)
 
         loading_apply = LoadingDialog(self._window.root, title="Applying Cimplicity Sync...")
         loading_apply.show("Applying your sync decisions...")
