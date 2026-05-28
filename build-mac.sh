@@ -32,14 +32,34 @@ echo "==> Running PyInstaller"
 pyinstaller --noconfirm --clean scripts/tag_central.spec
 
 APP_PATH="dist/Tag Center.app"
+MACOS_BIN="$APP_PATH/Contents/MacOS/Tag Center"
 if [[ ! -d "$APP_PATH" ]]; then
   echo "ERROR: Expected $APP_PATH"
   exit 1
 fi
 
+echo "==> Ensuring launcher is executable"
+chmod +x "$MACOS_BIN"
+
+echo "==> Ad-hoc code signing (local + informal sharing)"
+# Does not replace Apple notarization for wide public distribution, but avoids
+# some "damaged" errors and is required before zipping for other Macs.
+codesign --force --deep --sign - "$APP_PATH"
+
+ZIP_PATH="dist/Tag-Center-macOS.zip"
+echo "==> Creating release zip (use this for GitHub — preserves .app structure)"
+rm -f "$ZIP_PATH"
+ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+
 echo ""
 echo "Build complete:"
-echo "  $ROOT/$APP_PATH"
+echo "  App:  $ROOT/$APP_PATH"
+echo "  Zip:  $ROOT/$ZIP_PATH  (upload this to GitHub Releases)"
 echo ""
-echo "Open with: open \"$APP_PATH\""
-echo "User data (when running the .app): ~/Library/Application Support/TagCenter/"
+echo "Open locally: open \"$APP_PATH\""
+echo "User data:    ~/Library/Application Support/TagCenter/"
+echo ""
+echo "Downloaders on other Macs must allow the unsigned app once:"
+echo "  Right-click the .app → Open → Open"
+echo "  Or: xattr -dr com.apple.quarantine \"/path/to/Tag Center.app\""
+echo "See README.md → Distributing on macOS for details."

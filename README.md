@@ -35,6 +35,39 @@ Output: `dist/Tag Center.app` (onedir bundle — fast startup, no one-file extra
 
 The app shows a **startup splash** immediately while modules and your tag database load. Pandas is loaded only when you import/export Excel files.
 
+### Distributing on macOS (GitHub / email / USB)
+
+When you build on your Mac and run the app locally, it works. After someone **downloads** the `.app` or `.zip` from the internet, macOS **Gatekeeper** blocks it unless the app is signed and **notarized** with an [Apple Developer](https://developer.apple.com) account ($99/year).
+
+That produces messages like:
+
+> The application “Tag Center” can’t be opened.
+
+This is normal for unsigned PyInstaller apps. The app is not necessarily broken.
+
+**For people installing your release:**
+
+1. Unzip the download (double-click `Tag-Center-macOS.zip`).
+2. **Do not** only double-click the app the first time.
+3. **Right-click** `Tag Center.app` → **Open** → **Open** in the dialog (confirms you trust it once).
+4. Or remove the download quarantine flag in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/Tag\ Center.app
+```
+
+Then open normally. You can also use **System Settings → Privacy & Security → Open Anyway** if macOS shows a blocked-app banner.
+
+**For maintainers:**
+
+| Step | Purpose |
+|------|---------|
+| `./build-mac.sh` | Builds, ad-hoc signs, creates `dist/Tag-Center-macOS.zip` |
+| Upload `Tag-Center-macOS.zip` to GitHub Releases | Preserves executable bits better than zipping in Finder |
+| Apple Developer ID + `notarytool` + staple | Required for “just double-click” on most Macs without warnings |
+
+Renaming the app (e.g. to `Tag Center Mac.app`) is fine; keep the bundle name in release notes so users know what to open.
+
 ### Windows (.exe)
 
 On Windows, from the project root in PowerShell:
