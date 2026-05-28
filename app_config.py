@@ -24,7 +24,6 @@ DEFAULT_TABLE_COLUMNS = (
     "address",
     "sync_status",
     "conflict_group",
-    "conflicts_with",
     "vessels",
 )
 

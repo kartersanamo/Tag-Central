@@ -42,6 +42,8 @@ from services.export_service import ExportService
 from services.export_validation_service import ExportValidationService
 from services.internal_mismatch_service import (
     MISMATCH_DUPLICATE_DESCRIPTION,
+    MISMATCH_PT_ID_PREFIX,
+    MISMATCH_SHARED_ADDRESS,
     InternalMismatchService,
 )
 from services.proficy_import_analyzer import ProficyImportAnalyzer
@@ -116,7 +118,6 @@ class AppController:
             "address": "Address",
             "sync_status": "Sync",
             "conflict_group": "Group",
-            "conflicts_with": "Mismatches With",
             "vessels": "Vessels",
         }
 
@@ -248,7 +249,6 @@ class AppController:
                 "address": self._record_address(record),
                 "sync_status": self._sync_status_label(record.sync_status),
                 "conflict_group": group_label or "zzz",
-                "conflicts_with": ", ".join(peers),
                 "vessels": ", ".join(sorted(record.vessels)),
             }
             selected_value = value_map.get(self._sort_column, record.tag_name)
@@ -1405,7 +1405,6 @@ class AppController:
             "replace_text": replace_text,
             "preview_on": preview_on,
             "view_conflicts_only": view_conflicts_only,
-            "peers": dict(self._tag_conflict_peers),
             "group_labels": dict(self._tag_mismatch_group_label),
         }
 
@@ -1417,7 +1416,6 @@ class AppController:
         use_live_preview = bool(snapshot["use_live_preview"])
         find_text = str(snapshot["find_text"])
         find_scope = str(snapshot["find_scope"])
-        peers = snapshot["peers"]  # type: ignore[assignment]
         group_labels = snapshot["group_labels"]  # type: ignore[assignment]
         payloads: list[dict[str, object]] = []
         for row_number, (tag_name, record) in enumerate(rows_to_show, start=1):
@@ -1431,7 +1429,12 @@ class AppController:
                 row_tag, row_description, find_text, find_scope, highlight=bool(find_text)
             )
             group_label = group_labels.get(tag_name, "")
-            conflicts_with = ", ".join(peers.get(tag_name, []))
+            address_text = self._record_address(record)
+            display_tag, display_description, address_text = (
+                self._emphasize_matching_value(
+                    tag_name, display_tag, display_description, address_text
+                )
+            )
             payloads.append(
                 {
                     "iid": tag_name,
@@ -1442,10 +1445,9 @@ class AppController:
                         record.proficy_name or "",
                         record.cimplicity_pt_id or "",
                         display_description,
-                        self._record_address(record),
+                        address_text,
                         self._sync_status_label(record.sync_status),
                         group_label,
-                        conflicts_with,
                         ", ".join(sorted(record.vessels)),
                     ),
                     "style_tags": self._row_style_tags(
@@ -1519,6 +1521,43 @@ class AppController:
             prefix = "▾" if tag_name in self._expanded_array_bases else "▸"
             return f"{prefix} {tag_name}  ARRAY[{array_dim}] indices:{child_count}"
         return tag_name
+
+    @staticmethod
+    def _pseudo_bold(value: str) -> str:
+        """Returns a visually bold unicode variant for quick mismatch emphasis."""
+        lowered = "abcdefghijklmnopqrstuvwxyz"
+        uppered = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        digits = "0123456789"
+        bold_lowered = "𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇"
+        bold_uppered = "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭"
+        bold_digits = "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟕𝟴𝟵"
+        converted: list[str] = []
+        for char in value:
+            if char in lowered:
+                converted.append(bold_lowered[lowered.index(char)])
+            elif char in uppered:
+                converted.append(bold_uppered[uppered.index(char)])
+            elif char in digits:
+                converted.append(bold_digits[digits.index(char)])
+            else:
+                converted.append(char)
+        return "".join(converted)
+
+    def _emphasize_matching_value(
+        self,
+        tag_name: str,
+        display_tag: str,
+        display_description: str,
+        address_text: str,
+    ) -> tuple[str, str, str]:
+        mismatch_type = self._tag_mismatch_type.get(tag_name, "")
+        if mismatch_type == MISMATCH_DUPLICATE_DESCRIPTION:
+            display_description = self._pseudo_bold(display_description)
+        elif mismatch_type == MISMATCH_SHARED_ADDRESS:
+            address_text = self._pseudo_bold(address_text)
+        elif mismatch_type == MISMATCH_PT_ID_PREFIX:
+            display_tag = self._pseudo_bold(display_tag)
+        return display_tag, display_description, address_text
 
     def _canonical_tag_name(self, item_id: str) -> str:
         tag_name = str(item_id).strip().upper()
@@ -1626,13 +1665,14 @@ class AppController:
             )
 
             group_label = self._tag_mismatch_group_label.get(tag_name, "")
-            peers = self._tag_conflict_peers.get(tag_name, [])
-            conflicts_with = ", ".join(peers)
             vessels_text = ", ".join(sorted(record.vessels))
             address_text = self._record_address(record)
             proficy_name = record.proficy_name or ""
             cimplicity_pt = record.cimplicity_pt_id or ""
             sync_label = self._sync_status_label(record.sync_status)
+            display_tag, display_description, address_text = self._emphasize_matching_value(
+                tag_name, display_tag, display_description, address_text
+            )
 
             row_tags = self._row_style_tags(tag_name, record, group_label, bool(find_text))
             if group_label:
@@ -1651,7 +1691,6 @@ class AppController:
                     address_text,
                     sync_label,
                     group_label,
-                    conflicts_with,
                     vessels_text,
                 ),
                 tags=row_tags,

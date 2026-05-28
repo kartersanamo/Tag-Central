@@ -193,7 +193,6 @@ class MainWindow:
         self.tree.heading("address", text="Address")
         self.tree.heading("sync_status", text="Sync")
         self.tree.heading("conflict_group", text="Group")
-        self.tree.heading("conflicts_with", text="Mismatches With")
         self.tree.heading("vessels", text="Vessels")
         self.tree.column("row_number", width=55, anchor="center")
         self.tree.column("tag_name", width=150, anchor="w")
@@ -203,7 +202,6 @@ class MainWindow:
         self.tree.column("address", width=110, anchor="w")
         self.tree.column("sync_status", width=100, anchor="w")
         self.tree.column("conflict_group", width=60, anchor="center")
-        self.tree.column("conflicts_with", width=160, anchor="w")
         self.tree.column("vessels", width=140, anchor="w")
         for index, color in enumerate(CONFLICT_GROUP_COLORS):
             self.tree.tag_configure(f"conflict_g{index}", background=color)
