@@ -15,12 +15,12 @@ python main.py
 
 ## Building installers
 
-Branded builds bundle the **Tag Center** icon, version, and app metadata. User data (database, exports, backups) is stored outside the app bundle:
+Branded builds bundle the **Tag Center** icon, version, and app metadata. Data is stored outside the app bundle:
 
-| Platform | User data location |
-|----------|-------------------|
-| macOS | `~/Library/Application Support/TagCenter/` |
-| Windows | `%APPDATA%\TagCenter\` |
+| Platform | Tag database & backups | Export CSVs |
+|----------|------------------------|-------------|
+| macOS | `~/Library/Application Support/TagCenter/` | `~/Library/Application Support/Tag Center Exports/` |
+| Windows | `%APPDATA%\TagCenter\` | `%APPDATA%\Tag Center Exports\` |
 
 ### macOS (.app)
 
@@ -128,8 +128,8 @@ python scripts/generate_icons.py
 | `cimplicity_review_queue.json` | Unmatched Cimplicity rows |
 | `cimplicity_manual_tasks.json` | Manual Cimplicity work checklist |
 | `alias_rules.json` | Prefix alias pairs for linking |
-| `exports/` | Proficy batch CSVs |
 | `backups/` | DB and JSON snapshots |
+| **Tag Center Exports/** (sibling folder) | Proficy batch CSVs and Cimplicity manual reports — next to `TagCenter` (packaged) or next to the project folder (dev) |
 
 ### Proficy import columns
 

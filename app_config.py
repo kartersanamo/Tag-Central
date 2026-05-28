@@ -2,7 +2,14 @@
 
 from pathlib import Path
 
-from app_identity import APP_NAME, APP_VERSION, ensure_user_data_layout, is_frozen, user_data_dir
+from app_identity import (
+    APP_NAME,
+    APP_VERSION,
+    ensure_user_data_layout,
+    export_dir,
+    is_frozen,
+    user_data_dir,
+)
 
 APP_TITLE = APP_NAME
 WINDOW_SIZE = "1480x760"
@@ -14,7 +21,7 @@ if is_frozen():
     ensure_user_data_layout()
 
 DATABASE_FILE = _DATA_ROOT / "tags.csv"
-EXPORT_FOLDER = _DATA_ROOT / "exports"
+EXPORT_FOLDER = export_dir(project_root=PROJECT_ROOT)
 BACKUP_FOLDER = _DATA_ROOT / "backups"
 ALIAS_RULES_FILE = _DATA_ROOT / "alias_rules.json"
 CIMPLICITY_REVIEW_QUEUE_FILE = _DATA_ROOT / "cimplicity_review_queue.json"

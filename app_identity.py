@@ -26,7 +26,7 @@ def bundle_root() -> Path:
 
 
 def user_data_dir() -> Path:
-    """Writable per-user data directory (database, exports, backups)."""
+    """Writable per-user data directory (database, backups, JSON config)."""
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home()))
     elif sys.platform == "darwin":
@@ -34,6 +34,21 @@ def user_data_dir() -> Path:
     else:
         base = Path.home() / ".local" / "share"
     return base / APP_NAME.replace(" ", "")
+
+
+def export_dir(*, project_root: Path | None = None) -> Path:
+    """
+    Folder for Proficy/Cimplicity export CSVs — sibling to user data, easy to find.
+
+    Packaged app (macOS): ~/Library/Application Support/Tag Center Exports/
+    Packaged app (Windows): %APPDATA%\\Tag Center Exports\\
+    Development: <parent of repo>/Tag Central Exports/
+    """
+    export_folder_name = f"{APP_NAME} Exports"
+    if is_frozen():
+        return user_data_dir().parent / export_folder_name
+    root = project_root or Path(__file__).resolve().parent
+    return root.parent / export_folder_name
 
 
 def assets_dir() -> Path:
@@ -59,7 +74,7 @@ def default_alias_rules_path() -> Path:
 def ensure_user_data_layout() -> Path:
     """Creates user data folders and seeds default config from the bundle if missing."""
     root = user_data_dir()
-    for folder in (root, root / "exports", root / "backups"):
+    for folder in (root, root / "backups", export_dir()):
         folder.mkdir(parents=True, exist_ok=True)
 
     alias_target = root / "alias_rules.json"
