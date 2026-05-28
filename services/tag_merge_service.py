@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from models.tag_record import SYNC_SYNCED, TagRecord
+from services.address_normalizer import is_resolvable_address
 
 
 class TagMergeService:
@@ -30,7 +31,11 @@ class TagMergeService:
             survivor.cimplicity_pt_id = other.cimplicity_pt_id
             survivor.link_method = other.link_method or survivor.link_method
 
-        if other.linked_address and not survivor.linked_address:
+        if (
+            other.linked_address
+            and not survivor.linked_address
+            and is_resolvable_address(other.linked_address)
+        ):
             survivor.linked_address = other.linked_address
 
         if other.proficy_row_data and not survivor.proficy_row_data:

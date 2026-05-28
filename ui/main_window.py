@@ -84,9 +84,9 @@ class MainWindow:
         self.import_button = self.import_proficy_button
         self.cimplicity_review_button = ttk.Button(control_bar, text="Cimplicity Review (0)")
         self.cimplicity_tasks_button = ttk.Button(control_bar, text="Cimplicity Tasks (0)")
-        self.backups_button = ttk.Button(control_bar, text="Backups", width = 6)
-        self.refresh_button = ttk.Button(control_bar, text="Refresh", width = 6)
-        self.add_tag_button = ttk.Button(control_bar, text="Add Tag", width = 6)
+        self.backups_button = ttk.Button(control_bar, text="Backups", width=6)
+        self.refresh_button = ttk.Button(control_bar, text="Refresh", width=6)
+        self.add_tag_button = ttk.Button(control_bar, text="Add Tag", width=6)
         self.find_replace_button = ttk.Button(control_bar, text="Find & Replace ▾")
         self.export_changes_button = ttk.Button(control_bar, text="Export Proficy Changes (0)")
         self.review_export_queue_button = ttk.Button(

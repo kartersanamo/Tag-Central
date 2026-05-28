@@ -46,17 +46,17 @@ PERSIST_DEBOUNCE_MS = 300
 
 # Debug logging controls.
 # Master switch must be True for any debug output to print.
-DEBUG_LOGGING_ENABLED = True
+DEBUG_LOGGING_ENABLED = False
 DEBUG_LOGGING_OPTIONS = {
     # High-level pipeline stages and summary counts.
-    "import_flow": True,
+    "import_flow": False,
     # Detailed link attempts and match method decisions.
-    "linking": True,
+    "linking": False,
     # Ambiguous address rows with all candidate tags and addresses.
-    "ambiguous_address": True,
+    "ambiguous_address": False,
     # Queueing/exports and conflict decisions.
-    "export_queue": True,
-    "conflicts": True,
+    "export_queue": False,
+    "conflicts": False,
 }
 
 CONFLICT_GROUP_COLORS = (

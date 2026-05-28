@@ -74,6 +74,17 @@ class TestTagRepository(unittest.TestCase):
         self.assertEqual(loaded.cimplicity_pt_id, "TAG1")
         self.assertEqual(loaded.link_method, "address")
 
+    def test_symbolic_linked_address_not_persisted(self) -> None:
+        record = TagRecord(
+            tag_name="ARRAY_IDX",
+            description="TANK LEVEL",
+            proficy_row_data={"Name": "ARRAY_IDX", "IOAddress": "<SYMBOLIC>"},
+            linked_address="<SYMBOLIC>",
+        )
+        self.repository.save({"ARRAY_IDX": record})
+        loaded = self.repository.load()["ARRAY_IDX"]
+        self.assertEqual(loaded.linked_address, "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,9 +19,21 @@ class BackupService:
     PRELOAD_FILENAME = "__LATEST_PRELOAD__.csv"
 
     def __init__(self, backup_folder: Path, database_file: Path) -> None:
-        self._backup_folder = backup_folder
+        self._backup_folder = backup_folder.resolve()
         self._database_file = database_file
         self._backup_folder.mkdir(parents=True, exist_ok=True)
+
+    def _resolve_backup_path(self, backup_name: str) -> Path:
+        """Resolves a backup file inside the backup folder (rejects path traversal)."""
+        normalized = backup_name.strip()
+        if not normalized or normalized != Path(normalized).name:
+            raise ValueError(f"Invalid backup name: {backup_name!r}")
+        path = (self._backup_folder / normalized).resolve()
+        try:
+            path.relative_to(self._backup_folder)
+        except ValueError as error:
+            raise ValueError(f"Invalid backup name: {backup_name!r}") from error
+        return path
 
     def list_backups(self) -> list[dict[str, object]]:
         """Returns backup metadata for display."""
@@ -93,7 +105,7 @@ class BackupService:
 
     def restore_backup(self, backup_name: str) -> Path:
         """Restores a named backup to tags database."""
-        source = self._backup_folder / backup_name
+        source = self._resolve_backup_path(backup_name)
         if not source.exists():
             raise FileNotFoundError(f"Backup not found: {backup_name}")
         shutil.copy2(source, self._database_file)
@@ -101,7 +113,7 @@ class BackupService:
 
     def rename_backup(self, old_name: str, new_name: str) -> Path:
         """Renames backup file."""
-        source = self._backup_folder / old_name
+        source = self._resolve_backup_path(old_name)
         if not source.exists():
             raise FileNotFoundError(f"Backup not found: {old_name}")
         normalized = new_name.strip()
@@ -109,7 +121,7 @@ class BackupService:
             raise ValueError("Backup name cannot be empty.")
         if not normalized.lower().endswith(".csv"):
             normalized += ".csv"
-        destination = self._backup_folder / normalized
+        destination = self._resolve_backup_path(normalized)
         if destination.exists():
             raise FileExistsError(f"Backup already exists: {destination.name}")
         source.rename(destination)
@@ -117,13 +129,13 @@ class BackupService:
 
     def delete_backup(self, name: str) -> None:
         """Deletes a named backup file."""
-        path = self._backup_folder / name
+        path = self._resolve_backup_path(name)
         if path.exists():
             path.unlink()
 
     def preview_backup(self, backup_name: str, limit: int = 20) -> dict[str, object]:
         """Reads a small preview of backup CSV content."""
-        path = self._backup_folder / backup_name
+        path = self._resolve_backup_path(backup_name)
         if not path.exists():
             raise FileNotFoundError(f"Backup not found: {backup_name}")
         with path.open(newline="", encoding="utf-8") as file:

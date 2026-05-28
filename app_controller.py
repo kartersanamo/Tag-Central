@@ -38,6 +38,7 @@ from services.cross_program_sync_service import (
 )
 from services.debug_logger import debug_logger
 from services.description_suggester import DescriptionSuggester
+from services.address_normalizer import is_resolvable_address, normalize_address
 from services.export_queue_service import ExportQueueService
 from services.export_service import ExportService
 from services.export_validation_service import ExportValidationService
@@ -1059,17 +1060,9 @@ class AppController:
     @staticmethod
     def _export_fields_for_compare(row: dict[str, str]) -> dict[str, str]:
         """Extracts export-relevant fields so extra Proficy columns do not false-queue."""
-        from services.address_normalizer import normalize_address
+        from services.export_queue_service import export_fields_for_compare
 
-        name = str(row.get("Name", "")).strip().upper()
-        description = str(row.get("Description", "")).strip().upper()
-        address = ""
-        for key in ("IOAddress", "Address", "ADDRESS", "ioaddress"):
-            value = str(row.get(key, "")).strip()
-            if value:
-                address = normalize_address(value)
-                break
-        return {"Name": name, "Description": description, "Address": address}
+        return export_fields_for_compare(row)
 
     @staticmethod
     def _extract_address(row_data: dict[str, str]) -> str:
@@ -1129,7 +1122,7 @@ class AppController:
             return record.sync_status in {
                 SYNC_PROFICY_DRIFT,
                 SYNC_NEEDS_ALIGN,
-                "name_mismatch",
+                SYNC_NAME_MISMATCH,
             }
         return True
 
@@ -1537,7 +1530,11 @@ class AppController:
             index = max(int(digits or "1") - 1, 0)
             color_index = index % len(CONFLICT_GROUP_COLORS)
             return (f"conflict_g{color_index}",)
-        if record.sync_status in {SYNC_PROFICY_DRIFT, SYNC_NEEDS_ALIGN, "name_mismatch"}:
+        if record.sync_status in {
+            SYNC_PROFICY_DRIFT,
+            SYNC_NEEDS_ALIGN,
+            SYNC_NAME_MISMATCH,
+        }:
             return ("sync_drift",)
         if find_active:
             return ("find_match",)
@@ -2728,7 +2725,10 @@ class AppController:
         record.proficy_row_data["Address"] = new_address
         record.proficy_row_data["IOAddress"] = new_address
         record.proficy_name = new_tag
-        record.linked_address = new_address
+        if is_resolvable_address(new_address):
+            record.linked_address = normalize_address(new_address)
+        elif not record.cimplicity_pt_id:
+            record.linked_address = ""
         if record.cimplicity_pt_id:
             if record.description != normalize_description(
                 record.cimplicity_row_data.get("DESC", record.description)
@@ -2813,8 +2813,8 @@ class AppController:
             description=description,
             vessels=set(vessels),
         )
-        if address:
-            record.linked_address = address
+        if address and is_resolvable_address(address):
+            record.linked_address = normalize_address(address)
 
         if program in {"proficy", "both"}:
             row_data = {

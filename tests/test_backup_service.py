@@ -29,6 +29,12 @@ class TestBackupService(unittest.TestCase):
         self.assertEqual(len(listed), 1)
         self.assertEqual(listed[0]["name"], created.name)  # type: ignore[union-attr]
 
+    def test_reject_path_traversal_backup_name(self) -> None:
+        with self.assertRaises(ValueError):
+            self.service.restore_backup("../tags.csv")
+        with self.assertRaises(ValueError):
+            self.service.preview_backup("nested/backup.csv")
+
     def test_preload_revert_restores_previous_database(self) -> None:
         self.service.create_preload_backup()
         self.database.write_text(

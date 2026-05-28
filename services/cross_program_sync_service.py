@@ -13,7 +13,11 @@ from models.tag_record import (
     SYNC_SYNCED,
     TagRecord,
 )
-from services.address_normalizer import addresses_equivalent, normalize_address
+from services.address_normalizer import (
+    addresses_equivalent,
+    is_resolvable_address,
+    normalize_address,
+)
 from services.cimplicity_review_queue import CimplicityReviewQueue, ReviewQueueItem
 from services.debug_logger import debug_logger
 from services.tag_link_service import LinkResult, TagLinkService
@@ -371,12 +375,13 @@ class CrossProgramSyncService:
         if record.proficy_row_data:
             record.proficy_row_data["Name"] = new_canonical_name
             record.proficy_row_data["Description"] = new_description
-            if row.address:
-                record.proficy_row_data["IOAddress"] = row.address
-                record.proficy_row_data["Address"] = row.address
+            if row.address and is_resolvable_address(row.address):
+                normalized = normalize_address(row.address)
+                record.proficy_row_data["IOAddress"] = normalized
+                record.proficy_row_data["Address"] = normalized
         record.proficy_name = new_canonical_name
-        if row.address:
-            record.linked_address = row.address
+        if row.address and is_resolvable_address(row.address):
+            record.linked_address = normalize_address(row.address)
 
         if needs_rename:
             tags.pop(canonical_tag)
@@ -421,13 +426,17 @@ class CrossProgramSyncService:
                 record.sync_status = SYNC_PROFICY_ONLY
             return record.sync_status
 
+        import_address = normalize_address(TagRecord._address_from_row(row_data))
+        linked_address = (
+            import_address if is_resolvable_address(import_address) else ""
+        )
         record = TagRecord(
             tag_name=tag_name,
             description=description,
             vessels={vessel},
             proficy_row_data=dict(row_data),
             proficy_name=tag_name,
-            linked_address=normalize_address(TagRecord._address_from_row(row_data)),
+            linked_address=linked_address,
             sync_status=SYNC_PROFICY_ONLY,
         )
         tags[tag_name] = record

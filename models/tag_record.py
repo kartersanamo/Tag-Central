@@ -99,10 +99,13 @@ class TagRecord:
         """Stores Cimplicity import row without mutating canonical fields."""
         self.cimplicity_row_data = dict(row_data)
         self.cimplicity_pt_id = row_data.get("PT_ID", "").strip().upper()
-        from services.address_normalizer import normalize_address
+        from services.address_normalizer import (
+            is_resolvable_address,
+            normalize_address,
+        )
 
         address = normalize_address(row_data.get("ADDR", ""))
-        if address:
+        if is_resolvable_address(address):
             self.linked_address = address
         self.link_method = link_method
         if vessel:
