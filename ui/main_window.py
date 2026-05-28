@@ -40,6 +40,7 @@ class MainWindow:
         self.add_tag_button: ttk.Button | None = None
         self.find_replace_button: ttk.Button | None = None
         self.find_replace_apply_button: ttk.Button | None = None
+        self.find_replace_delete_button: ttk.Button | None = None
         self.find_replace_clear_button: ttk.Button | None = None
         self.find_scope_combo: ttk.Combobox | None = None
         self.find_replace_bar: ttk.LabelFrame | None = None
@@ -130,6 +131,10 @@ class MainWindow:
         ).pack(side="left", padx=(0, 6))
         self.find_replace_apply_button = ttk.Button(self.find_replace_bar, text="Apply")
         self.find_replace_apply_button.pack(side="left", padx=(0, 8))
+        self.find_replace_delete_button = ttk.Button(
+            self.find_replace_bar, text="Delete Matches"
+        )
+        self.find_replace_delete_button.pack(side="left", padx=(0, 8))
         self.find_replace_clear_button = ttk.Button(self.find_replace_bar, text="Clear")
         self.find_replace_clear_button.pack(side="left", padx=(0, 8))
         ttk.Label(self.find_replace_bar, textvariable=self.find_replace_status_var).pack(

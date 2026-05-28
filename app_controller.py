@@ -134,7 +134,11 @@ class AppController:
         assert self._window.refresh_button and self._window.reset_filter_button
         assert self._window.add_tag_button
         assert self._window.find_replace_button
-        assert self._window.find_replace_apply_button and self._window.find_replace_clear_button
+        assert (
+            self._window.find_replace_apply_button
+            and self._window.find_replace_delete_button
+            and self._window.find_replace_clear_button
+        )
         assert self._window.find_scope_combo
         assert self._window.export_changes_button
         assert self._window.review_export_queue_button
@@ -153,6 +157,9 @@ class AppController:
             command=self._window.toggle_find_replace_visibility
         )
         self._window.find_replace_apply_button.configure(command=self.apply_inline_find_replace)
+        self._window.find_replace_delete_button.configure(
+            command=self.delete_inline_find_matches
+        )
         self._window.find_replace_clear_button.configure(command=self.clear_inline_find_replace)
         self._window.export_changes_button.configure(command=self.export_pending_changes)
         self._window.review_export_queue_button.configure(
@@ -633,6 +640,83 @@ class AppController:
         self._window.find_scope_var.set("both")
         if refresh:
             self.refresh_table()
+
+    def delete_inline_find_matches(self) -> None:
+        """Deletes all tags matching current Find/Scope with strong confirmation."""
+        find_text = self._window.find_text_var.get().strip()
+        scope = self._window.find_scope_var.get()
+        if not find_text:
+            messagebox.showwarning(
+                "Invalid Input", "Enter Find text before deleting matches."
+            )
+            return
+
+        matching_tags = [
+            tag_name
+            for tag_name, record in self._tags.items()
+            if self._matches_find_scope(record, find_text, scope)
+        ]
+        if not matching_tags:
+            messagebox.showinfo(
+                "Delete Matches", "No tags match the current Find and Scope."
+            )
+            return
+
+        preview = ", ".join(matching_tags[:10])
+        if len(matching_tags) > 10:
+            preview += ", ..."
+        confirmed = messagebox.askyesno(
+            "DANGER: Delete All Matching Tags",
+            f"IMPORTANT: This will permanently delete {len(matching_tags)} tag(s)\n"
+            f"matching Find '{find_text}' in scope '{scope}'.\n\n"
+            f"Examples: {preview}\n\n"
+            "This action cannot be undone.\n"
+            "Proficy delete rows will be queued for export.\n\n"
+            "Are you absolutely sure you want to continue?",
+            icon=messagebox.WARNING,
+        )
+        if not confirmed:
+            return
+
+        if len(matching_tags) >= BULK_DELETE_BACKUP_THRESHOLD:
+            self._auto_backup_before_bulk("find_delete_matches")
+
+        loading_delete = LoadingDialog(
+            self._window.root, title="Deleting Find Matches..."
+        )
+        loading_delete.show("Deleting matching tags...")
+        try:
+            for index, tag_name in enumerate(matching_tags, start=1):
+                if index == 1 or index % 100 == 0:
+                    loading_delete.update_status(
+                        f"Deleting matches... {index}/{len(matching_tags)}"
+                    )
+                record = self._tags.pop(tag_name, None)
+                if record is not None:
+                    vessels = record.vessels or {"GLOBAL"}
+                    deleted_row = dict(record.row_data)
+                    deleted_row["Name"] = ""
+                    deleted_row["Description"] = record.description
+                    for vessel in vessels:
+                        self._queue_change(vessel=vessel, row_data=deleted_row)
+
+                self._conflicted_tags.discard(tag_name)
+                self._tag_conflict_peers.pop(tag_name, None)
+                self._tag_mismatch_group_label.pop(tag_name, None)
+                self._tag_mismatch_type.pop(tag_name, None)
+                self._view_conflict_session_tags.discard(tag_name)
+
+            loading_delete.update_status("Saving deletion changes...")
+            self._persist_tags()
+            self._refresh_filter_values()
+            self.refresh_table()
+        finally:
+            loading_delete.close()
+
+        messagebox.showinfo(
+            "Delete Matches Complete",
+            f"Deleted {len(matching_tags)} matching tag(s).",
+        )
 
     def _apply_find_replace(self, find_text: str, replace_text: str, scope: str) -> int:
         """Applies text replacement and returns number of changed tags."""
