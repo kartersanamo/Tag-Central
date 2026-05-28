@@ -45,6 +45,21 @@ BULK_DELETE_BACKUP_THRESHOLD = 5
 BULK_IMPORT_BACKUP_THRESHOLD = 100
 PERSIST_DEBOUNCE_MS = 300
 
+# Debug logging controls.
+# Master switch must be True for any debug output to print.
+DEBUG_LOGGING_ENABLED = False
+DEBUG_LOGGING_OPTIONS = {
+    # High-level pipeline stages and summary counts.
+    "import_flow": True,
+    # Detailed link attempts and match method decisions.
+    "linking": True,
+    # Ambiguous address rows with all candidate tags and addresses.
+    "ambiguous_address": True,
+    # Queueing/exports and conflict decisions.
+    "export_queue": False,
+    "conflicts": False,
+}
+
 CONFLICT_GROUP_COLORS = (
     "#ffe8e8",
     "#fff3e0",

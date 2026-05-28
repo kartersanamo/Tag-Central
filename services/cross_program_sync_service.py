@@ -15,6 +15,7 @@ from models.tag_record import (
 )
 from services.address_normalizer import addresses_equivalent, normalize_address
 from services.cimplicity_review_queue import CimplicityReviewQueue, ReviewQueueItem
+from services.debug_logger import debug_logger
 from services.tag_link_service import LinkResult, TagLinkService
 
 
@@ -113,10 +114,36 @@ class CrossProgramSyncService:
     ) -> CimplicityImportSummary:
         """Classifies Cimplicity rows without mutating tags."""
         summary = CimplicityImportSummary(total_rows=len(rows))
+        debug_logger.log(
+            "import_flow",
+            "Analyze Cimplicity import started",
+            vessel=vessel,
+            total_rows=len(rows),
+            existing_tags=len(tags),
+        )
         for row in rows:
             link = self._linker.link_cimplicity_row(tags, row.pt_id, row.address)
             self._record_link_stat(summary, link)
             if link.ambiguous_tags:
+                candidate_details: list[str] = []
+                for tag_name in link.ambiguous_tags:
+                    record = tags.get(tag_name)
+                    if record is None:
+                        continue
+                    candidate_details.append(
+                        f"{tag_name}|proficy_name={record.proficy_name or tag_name}"
+                        f"|linked_address={record.linked_address}"
+                        f"|desc={record.description}"
+                    )
+                debug_logger.log(
+                    "ambiguous_address",
+                    "Row classified as ambiguous",
+                    row_index=row.row_index,
+                    pt_id=row.pt_id,
+                    desc=row.description,
+                    address=row.address,
+                    candidates=candidate_details,
+                )
                 summary.actionable.append(
                     CimplicitySyncAction(
                         row_index=row.row_index,
@@ -134,15 +161,39 @@ class CrossProgramSyncService:
                 continue
 
             if link.canonical_tag is None:
+                debug_logger.log(
+                    "linking",
+                    "Row unmatched; will be sent to review queue",
+                    row_index=row.row_index,
+                    pt_id=row.pt_id,
+                    address=row.address,
+                )
                 summary.review_queue_added += 1
                 continue
 
             record = tags[link.canonical_tag]
             issues = self._detect_issues(record, row)
             if not issues:
+                debug_logger.log(
+                    "linking",
+                    "Row linked with no issues",
+                    row_index=row.row_index,
+                    pt_id=row.pt_id,
+                    canonical_tag=link.canonical_tag,
+                    method=link.method or "",
+                )
                 summary.linked_synced += 1
                 continue
 
+            debug_logger.log(
+                "linking",
+                "Row linked but requires resolver action",
+                row_index=row.row_index,
+                pt_id=row.pt_id,
+                canonical_tag=link.canonical_tag,
+                method=link.method or "",
+                issues=issues,
+            )
             summary.actionable.append(
                 CimplicitySyncAction(
                     row_index=row.row_index,
@@ -158,6 +209,20 @@ class CrossProgramSyncService:
                 )
             )
         summary.report_lines = self._build_report_lines(summary)
+        debug_logger.log(
+            "import_flow",
+            "Analyze Cimplicity import complete",
+            vessel=vessel,
+            total_rows=summary.total_rows,
+            linked_synced=summary.linked_synced,
+            actionable=len(summary.actionable),
+            review_queue_added=summary.review_queue_added,
+            ambiguous_address=summary.ambiguous_address,
+            matched_exact_id=summary.matched_exact_id,
+            matched_cimplicity_pt_id=summary.matched_cimplicity_pt_id,
+            matched_address=summary.matched_address,
+            matched_alias=summary.matched_alias,
+        )
         return summary
 
     @staticmethod

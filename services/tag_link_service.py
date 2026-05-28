@@ -7,6 +7,7 @@ from typing import Literal
 
 from models.tag_record import TagRecord
 from services.address_normalizer import addresses_equivalent, normalize_address
+from services.debug_logger import debug_logger
 from services.tag_alias_rules import TagAliasRules
 
 LinkMethod = Literal["exact_id", "address", "alias", "cimplicity_pt_id", "manual"]
@@ -36,23 +37,54 @@ class TagLinkService:
         """Finds the best canonical tag for a Cimplicity PT_ID and ADDR."""
         pt_id = pt_id.strip().upper()
         normalized_address = normalize_address(address)
+        debug_logger.log(
+            "linking",
+            "Link Cimplicity row",
+            pt_id=pt_id,
+            raw_address=address,
+            normalized_address=normalized_address,
+            tag_count=len(tags),
+        )
 
         if pt_id in tags:
+            debug_logger.log(
+                "linking", "Matched by exact PT_ID", pt_id=pt_id, canonical_tag=pt_id
+            )
             return LinkResult(canonical_tag=pt_id, method="exact_id", ambiguous_tags=[])
 
         for tag_name, record in tags.items():
             if record.cimplicity_pt_id == pt_id:
+                debug_logger.log(
+                    "linking",
+                    "Matched by stored Cimplicity PT_ID",
+                    pt_id=pt_id,
+                    canonical_tag=tag_name,
+                )
                 return LinkResult(canonical_tag=tag_name, method="cimplicity_pt_id", ambiguous_tags=[])
 
         if normalized_address:
             address_matches = self._tags_by_address(tags, normalized_address)
             if len(address_matches) == 1:
+                debug_logger.log(
+                    "linking",
+                    "Matched by address",
+                    pt_id=pt_id,
+                    normalized_address=normalized_address,
+                    canonical_tag=address_matches[0],
+                )
                 return LinkResult(
                     canonical_tag=address_matches[0],
                     method="address",
                     ambiguous_tags=[],
                 )
             if len(address_matches) > 1:
+                debug_logger.log(
+                    "ambiguous_address",
+                    "Ambiguous address match",
+                    pt_id=pt_id,
+                    normalized_address=normalized_address,
+                    candidate_tags=address_matches,
+                )
                 return LinkResult(
                     canonical_tag=None,
                     method=None,
@@ -67,12 +99,26 @@ class TagLinkService:
                         TagRecord._address_from_row(record.proficy_row_data)
                     )
                     if addresses_equivalent(record_address, normalized_address):
+                        debug_logger.log(
+                            "linking",
+                            "Matched by alias + address",
+                            pt_id=pt_id,
+                            alias_variant=variant,
+                            canonical_tag=variant,
+                            normalized_address=normalized_address,
+                        )
                         return LinkResult(
                             canonical_tag=variant,
                             method="alias",
                             ambiguous_tags=[],
                         )
 
+        debug_logger.log(
+            "linking",
+            "No match for Cimplicity row",
+            pt_id=pt_id,
+            normalized_address=normalized_address,
+        )
         return LinkResult(canonical_tag=None, method=None, ambiguous_tags=[])
 
     @staticmethod

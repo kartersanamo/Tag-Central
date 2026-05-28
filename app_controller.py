@@ -35,6 +35,7 @@ from services.cross_program_sync_service import (
     CrossProgramSyncService,
     normalize_description,
 )
+from services.debug_logger import debug_logger
 from services.description_suggester import DescriptionSuggester
 from services.export_queue_service import ExportQueueService
 from services.export_service import ExportService
@@ -664,6 +665,11 @@ class AppController:
             self._tags.pop(old_tag_name)
             record.tag_name = new_tag_name
             record.description = new_description
+            if new_tag_name != old_tag_name:
+                record.proficy_name = new_tag_name
+            if record.proficy_row_data:
+                record.proficy_row_data["Name"] = new_tag_name
+                record.proficy_row_data["Description"] = new_description
             self._tags[new_tag_name] = record
 
             if old_tag_name in self._conflicted_tags:
@@ -832,6 +838,14 @@ class AppController:
         baseline: dict[str, str] | None = None,
     ) -> None:
         self._export_queue.add(vessel, row_data, baseline=baseline)
+        debug_logger.log(
+            "export_queue",
+            "Queued export row",
+            vessel=vessel,
+            name=row_data.get("Name", ""),
+            description=row_data.get("Description", ""),
+            address=row_data.get("IOAddress", row_data.get("Address", "")),
+        )
         self._update_pending_change_indicator()
 
     def _queue_change_if_different(
@@ -1453,6 +1467,18 @@ class AppController:
         if not vessel:
             messagebox.showwarning("Invalid Vessel", "Vessel name cannot be empty.")
             return
+        debug_logger.log(
+            "import_flow",
+            "Cimplicity import requested",
+            vessel=vessel,
+            path=file_path,
+        )
+        debug_logger.log(
+            "import_flow",
+            "Proficy import requested",
+            vessel=vessel,
+            path=file_path,
+        )
 
         loading_read = LoadingDialog(self._window.root, title="Importing Proficy...")
         loading_read.show("Loading Proficy spreadsheet...")
@@ -1491,11 +1517,21 @@ class AppController:
         if not ImportDryRunDialog(
             self._window.root, "Proficy Import Preview", dry_lines
         ).show():
+            debug_logger.log(
+                "import_flow",
+                "Proficy import cancelled at preview",
+                vessel=vessel,
+            )
             return
         if analysis.estimated_export_rows >= BULK_IMPORT_BACKUP_THRESHOLD:
             self._auto_backup_before_bulk("proficy_import")
 
         if not self._fill_missing_descriptions(rows, summary):
+            debug_logger.log(
+                "import_flow",
+                "Proficy import cancelled in description review",
+                vessel=vessel,
+            )
             return
 
         pending_conflicts: list[dict[str, object]] = []
@@ -1596,6 +1632,12 @@ class AppController:
             conflict_dialog.close()
 
             if decisions is None:
+                debug_logger.log(
+                    "conflicts",
+                    "Proficy conflict resolver cancelled",
+                    vessel=vessel,
+                    pending_conflicts=len(pending_conflicts),
+                )
                 return
 
             loading_conflicts = LoadingDialog(
@@ -1696,6 +1738,17 @@ class AppController:
         finally:
             loading_finalize.close()
         self._notify_import_complete(summary)
+        debug_logger.log(
+            "import_flow",
+            "Proficy import complete",
+            vessel=vessel,
+            total_rows=summary["total_rows"],
+            conflicts_detected=summary["conflicts_detected"],
+            resolved_use_imported=summary["resolved_use_imported"],
+            resolved_use_existing=summary["resolved_use_existing"],
+            resolved_keep_both=summary["resolved_keep_both"],
+            exports_pending=self._export_queue.count(),
+        )
 
     def import_cimplicity_spreadsheet(self) -> None:
         """Imports a Cimplicity Shared Name File and aligns Proficy where needed."""
@@ -1757,6 +1810,11 @@ class AppController:
         if not ImportDryRunDialog(
             self._window.root, "Cimplicity Import Preview", dry_lines
         ).show():
+            debug_logger.log(
+                "import_flow",
+                "Cimplicity import cancelled at preview",
+                vessel=vessel,
+            )
             return
 
         pending_tasks = cimplicity_desc_summary.get("pending_manual_tasks", [])
@@ -1808,6 +1866,12 @@ class AppController:
             result = sync_dialog.resolve_rows(vessel=vessel, rows=dialog_rows)
             sync_dialog.close()
             if result is None:
+                debug_logger.log(
+                    "import_flow",
+                    "Cimplicity sync resolver cancelled",
+                    vessel=vessel,
+                    actionable_rows=len(dialog_rows),
+                )
                 return
             decisions = result
 
@@ -1932,6 +1996,19 @@ class AppController:
             loading_apply.close()
 
         self._notify_cimplicity_import_complete(summary)
+        debug_logger.log(
+            "import_flow",
+            "Cimplicity import complete",
+            vessel=vessel,
+            total_rows=summary["total_rows"],
+            linked_synced=summary["linked_synced"],
+            auto_aligned=summary["auto_aligned"],
+            skipped=summary["skipped"],
+            review_queue_added=summary["review_queue_added"],
+            manual_flags=summary["manual_cimplicity_flags"],
+            descriptions_filled=summary["rows_missing_description_filled"],
+            exports_pending=self._export_queue.count(),
+        )
 
     def import_spreadsheet(self) -> None:
         """Backward-compatible alias for Proficy import."""
@@ -2362,6 +2439,12 @@ class AppController:
         if self._export_queue.count() == 0:
             messagebox.showinfo("No Pending Changes", "There are no pending changes to export.")
             return True
+        debug_logger.log(
+            "export_queue",
+            "Starting export pending changes",
+            pending_count=self._export_queue.count(),
+            vessel_count=self._export_queue.vessel_count(),
+        )
 
         snapshot = self._export_queue.all_entries()
         exports = self._export_queue.to_legacy_exports()
@@ -2384,6 +2467,12 @@ class AppController:
             "Validate the exported CSV files against the queued changes?",
         ):
             self._validate_export_files(written_paths, snapshot)
+        debug_logger.log(
+            "export_queue",
+            "Finished export pending changes",
+            exported_rows=pending_count,
+            files=[str(path) for path in written_paths],
+        )
         return True
 
     def _validate_export_files(
