@@ -1,6 +1,7 @@
 """Application orchestration and event handlers."""
 
 from collections.abc import Callable
+import sys
 
 import tkinter as tk
 import re
@@ -190,28 +191,34 @@ class AppController:
         )
         self._window.tree.bind("<Button-3>", self._show_context_menu)
         self._window.tree.bind("<Double-1>", self._on_tree_double_click)
+        for copy_binding in ("<Control-c>", "<Control-C>"):
+            self._window.tree.bind(copy_binding, self._on_copy_tags_shortcut)
+        if sys.platform == "darwin":
+            for copy_binding in ("<Command-c>", "<Command-C>"):
+                self._window.tree.bind(copy_binding, self._on_copy_tags_shortcut)
         for column_name in self._column_heading_labels:
             self._window.tree.heading(
                 column_name,
                 command=lambda value=column_name: self._on_tree_heading_click(value),
             )
         self._window.context_menu.entryconfigure(0, command=self.edit_selected_tag)
+        self._window.context_menu.entryconfigure(1, command=self.copy_selected_tags)
         self._window.context_menu.entryconfigure(
-            1, command=self.align_selected_to_cimplicity
+            2, command=self.align_selected_to_cimplicity
         )
         self._window.context_menu.entryconfigure(
-            2, command=self.toggle_selected_array_indices
+            3, command=self.toggle_selected_array_indices
         )
         self._window.context_menu.entryconfigure(
-            3, command=self.jump_to_selected_mismatches
+            4, command=self.jump_to_selected_mismatches
         )
-        self._window.context_menu.entryconfigure(4, command=self.view_selected_tag_diff)
+        self._window.context_menu.entryconfigure(5, command=self.view_selected_tag_diff)
         self._window.context_menu.entryconfigure(
-            5, command=self.increment_selected_descriptions
+            6, command=self.increment_selected_descriptions
         )
-        self._window.context_menu.entryconfigure(7, command=self.merge_selected_tags)
-        self._window.context_menu.entryconfigure(9, command=self.add_new_tag)
-        self._window.context_menu.entryconfigure(11, command=self.delete_selected_tags)
+        self._window.context_menu.entryconfigure(8, command=self.merge_selected_tags)
+        self._window.context_menu.entryconfigure(10, command=self.add_new_tag)
+        self._window.context_menu.entryconfigure(12, command=self.delete_selected_tags)
         self._refresh_tree_heading_sort_markers()
 
     def _on_tree_heading_click(self, column_name: str) -> None:
@@ -269,14 +276,25 @@ class AppController:
 
         selection = list(self._window.tree.selection())
         selected_count = len(selection)
+        copy_label = (
+            "Copy Tag"
+            if selected_count <= 1
+            else f"Copy {selected_count} Tags"
+        )
+        self._window.context_menu.entryconfigure(
+            1,
+            label=copy_label,
+            state="normal" if selected_count else "disabled",
+        )
+
         if selected_count <= 1:
             align_label = "Align to Cimplicity"
             delete_label = "Delete Tag"
         else:
             align_label = f"Align {selected_count} tags to Cimplicity"
             delete_label = f"Delete {selected_count} tags"
-        self._window.context_menu.entryconfigure(1, label=align_label)
-        self._window.context_menu.entryconfigure(11, label=delete_label)
+        self._window.context_menu.entryconfigure(2, label=align_label)
+        self._window.context_menu.entryconfigure(12, label=delete_label)
 
         array_toggle_label = "Toggle Array Indices"
         can_toggle_array = False
@@ -290,7 +308,7 @@ class AppController:
                     else "Show Array Indices"
                 )
         self._window.context_menu.entryconfigure(
-            2,
+            3,
             label=array_toggle_label,
             state="normal" if can_toggle_array else "disabled",
         )
@@ -298,7 +316,7 @@ class AppController:
         jump_candidates = self._selected_mismatch_group_tags(selection)
         can_jump = len(jump_candidates) > 1
         self._window.context_menu.entryconfigure(
-            3, state="normal" if can_jump else "disabled"
+            4, state="normal" if can_jump else "disabled"
         )
 
         can_diff = (
@@ -310,12 +328,12 @@ class AppController:
             )
         )
         self._window.context_menu.entryconfigure(
-            4, state="normal" if can_diff else "disabled"
+            5, state="normal" if can_diff else "disabled"
         )
 
         can_merge = len(selection) == 2 and all(tag in self._tags for tag in selection)
         self._window.context_menu.entryconfigure(
-            7, state="normal" if can_merge else "disabled"
+            8, state="normal" if can_merge else "disabled"
         )
 
         can_increment = self._can_increment_descriptions(selection)
@@ -330,9 +348,67 @@ class AppController:
             increment_label = "Increment descriptions"
             increment_state = "disabled"
         self._window.context_menu.entryconfigure(
-            5, label=increment_label, state=increment_state
+            6, label=increment_label, state=increment_state
         )
         self._window.context_menu.post(event.x_root, event.y_root)
+
+    def _on_copy_tags_shortcut(self, event: tk.Event) -> str:
+        """Copies selected tag rows when the table has focus."""
+        self.copy_selected_tags()
+        return "break"
+
+    def _clipboard_column_headers(self) -> list[str]:
+        return [
+            "Tag",
+            "Proficy Name",
+            "Cimplicity PT_ID",
+            "Description",
+            "Address",
+            "Sync",
+            "Group",
+            "Vessels",
+        ]
+
+    @staticmethod
+    def _escape_tsv_field(value: str) -> str:
+        """Quotes clipboard fields that contain tabs or line breaks."""
+        if any(character in value for character in ('\t', '\n', '\r', '"')):
+            return '"' + value.replace('"', '""') + '"'
+        return value
+
+    def _tag_clipboard_row_values(self, tag_name: str, record: TagRecord) -> list[str]:
+        group_label = self._tag_mismatch_group_label.get(tag_name, "")
+        values = [
+            record.tag_name,
+            record.proficy_name or "",
+            record.cimplicity_pt_id or "",
+            record.description,
+            self._record_address(record),
+            self._sync_status_label(record.sync_status),
+            group_label,
+            ", ".join(sorted(record.vessels)),
+        ]
+        return [self._escape_tsv_field(value) for value in values]
+
+    def copy_selected_tags(self) -> None:
+        """Copies selected tag row values to the system clipboard (tab-separated)."""
+        selected_tags = self._get_selected_tag_names()
+        if not selected_tags:
+            return
+
+        lines = ["\t".join(self._clipboard_column_headers())]
+        for tag_name in sorted(selected_tags):
+            record = self._tags.get(tag_name)
+            if record is None:
+                continue
+            lines.append(
+                "\t".join(self._tag_clipboard_row_values(tag_name, record))
+            )
+
+        clipboard_text = "\n".join(lines)
+        self._window.root.clipboard_clear()
+        self._window.root.clipboard_append(clipboard_text)
+        self._window.root.update_idletasks()
 
     def _on_tree_double_click(self, event: tk.Event) -> None:
         assert self._window.tree
