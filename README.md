@@ -31,7 +31,9 @@ chmod +x build-mac.sh
 ./build-mac.sh
 ```
 
-Output: `dist/Tag Center.app`
+Output: `dist/Tag Center.app` (onedir bundle — fast startup, no one-file extract delay)
+
+The app shows a **startup splash** immediately while modules and your tag database load. Pandas is loaded only when you import/export Excel files.
 
 ### Windows (.exe)
 
@@ -43,7 +45,7 @@ On Windows, from the project root in PowerShell:
 
 Or double-click `build-windows.bat`.
 
-Output: `dist\Tag Center.exe`
+Output: `dist\Tag Center\Tag Center.exe` (onedir folder — copy the whole `Tag Center` folder to distribute)
 
 ### Icons
 

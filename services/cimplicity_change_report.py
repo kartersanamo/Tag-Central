@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
-
 from app_config import EXPORT_FOLDER
+from services.pandas_lazy import get_pandas
 
 
 class CimplicityChangeReport:
@@ -22,6 +21,7 @@ class CimplicityChangeReport:
     ) -> Path | None:
         if not entries:
             return None
+        pd = get_pandas()
         self._export_folder.mkdir(parents=True, exist_ok=True)
         output_path = self._next_path(vessel)
         frame = pd.DataFrame(entries)

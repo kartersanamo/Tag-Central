@@ -78,7 +78,19 @@ class AppController:
 
     _ARRAY_INDEX_PATTERN = re.compile(r"^(?P<base>.+)\[(?P<index>\d+)\]$")
 
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        *,
+        startup_status: Callable[[str], None] | None = None,
+        *,
+        skip_initial_refresh: bool = False,
+    ) -> None:
+        def status(message: str) -> None:
+            if startup_status is not None:
+                startup_status(message)
+
+        status("Loading database…")
         self._repository = TagRepository(DATABASE_FILE)
         self._loader = SpreadsheetLoader()
         self._cimplicity_loader = CimplicityLoader()
@@ -90,7 +102,7 @@ class AppController:
         self._cimplicity_report = CimplicityChangeReport()
         self._manual_tasks = CimplicityManualTasks()
         self._cimplicity_manual_entries: list[dict[str, str]] = []
-        self._tags: dict[str, TagRecord] = self._repository.load()
+        self._tags = self._repository.load()
         self._active_vessel_filter: str | None = None
         self._conflicted_tags: set[str] = set()
         self._tag_conflict_peers: dict[str, list[str]] = {}
@@ -122,14 +134,28 @@ class AppController:
             "vessels": "Vessels",
         }
 
+        status("Building interface…")
         self._window = MainWindow(root)
         self._bind_events()
         self._refresh_filter_values()
+        status("Analyzing tags…")
         self._recalculate_conflicted_tags()
         self._window.set_pending_change_count(0)
         self._update_review_queue_indicator()
         self._update_manual_tasks_indicator()
         self._window.root.protocol("WM_DELETE_WINDOW", self._handle_app_close)
+        if not skip_initial_refresh:
+            tag_count = len(self._tags)
+            status(f"Loading {tag_count} tag{'s' if tag_count != 1 else ''}…")
+            self.refresh_table()
+
+    def finish_startup(self, startup_status: Callable[[str], None] | None = None) -> None:
+        """Populates the tag table after the main window is visible."""
+        if startup_status is not None:
+            tag_count = len(self._tags)
+            startup_status(
+                f"Loading {tag_count} tag{'s' if tag_count != 1 else ''}…"
+            )
         self.refresh_table()
 
     def _bind_events(self) -> None:

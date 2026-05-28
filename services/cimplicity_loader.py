@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+from io import StringIO
 from pathlib import Path
-
-import pandas as pd
 
 from services.address_normalizer import normalize_address
 
@@ -25,36 +25,34 @@ class CimplicityLoader:
         if not data_lines:
             raise ValueError("Cimplicity file has no data rows.")
 
-        frame = pd.read_csv(
-            pd.io.common.StringIO("\n".join(data_lines)),
-            dtype=str,
-            keep_default_na=False,
-        )
-        frame.columns = frame.columns.str.strip()
-        self._validate_schema(frame)
+        reader = csv.DictReader(StringIO("\n".join(data_lines)))
+        if reader.fieldnames is None:
+            raise ValueError("Cimplicity file has no column headers.")
+
+        columns = [str(column).strip() for column in reader.fieldnames]
+        self._validate_schema(columns)
 
         rows: list[dict[str, str]] = []
-        for _, series in frame.iterrows():
-            row = {
-                key: ("" if pd.isna(value) else str(value).strip())
-                for key, value in series.to_dict().items()
+        for row in reader:
+            normalized = {
+                str(key).strip(): str(value).strip()
+                for key, value in row.items()
+                if key is not None
             }
-            pt_id = row.get("PT_ID", "").strip().upper()
+            pt_id = normalized.get("PT_ID", "").strip().upper()
             if not pt_id:
                 continue
-            row["PT_ID"] = pt_id
-            row["DESC"] = row.get("DESC", "").strip()
-            if row.get("ADDR", "").strip():
-                row["ADDR"] = normalize_address(row["ADDR"])
-            rows.append(row)
+            normalized["PT_ID"] = pt_id
+            if "ADDR" in normalized:
+                normalized["ADDR"] = normalize_address(normalized["ADDR"])
+            rows.append(normalized)
         return rows
 
-    def _validate_schema(self, frame: pd.DataFrame) -> None:
-        columns = {str(column).strip() for column in frame.columns.tolist()}
-        missing = self.REQUIRED_COLUMNS - columns
+    def _validate_schema(self, columns: list[str]) -> None:
+        missing = self.REQUIRED_COLUMNS - set(columns)
         if missing:
             missing_text = ", ".join(sorted(missing))
             raise ValueError(
                 "Cimplicity file is missing required columns: "
-                f"{missing_text}. Expected PT_ID and DESC."
+                f"{missing_text}. Required: PT_ID, DESC."
             )

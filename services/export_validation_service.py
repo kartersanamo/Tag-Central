@@ -6,9 +6,8 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pandas as pd
-
 from services.export_queue_service import export_fields_for_compare
+from services.pandas_lazy import get_pandas
 
 
 @dataclass
@@ -34,34 +33,42 @@ class ExportValidationService:
         path: Path,
         expected_rows: list[dict[str, str]],
     ) -> ExportValidationResult:
+        pd = get_pandas()
         result = ExportValidationResult(path=path, expected_count=len(expected_rows))
         if not path.exists():
             result.missing = [row.get("Name", "?") for row in expected_rows]
             return result
 
-        frame = pd.read_csv(path, dtype=str).fillna("")
-        loaded: list[dict[str, str]] = []
-        for _, series in frame.iterrows():
-            row = {str(key): str(value) for key, value in series.items()}
-            loaded.append(row)
-        result.found_count = len(loaded)
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+        result.found_count = len(frame)
 
-        loaded_by_name: dict[str, deque[dict[str, str]]] = defaultdict(deque)
-        for row in loaded:
+        expected_by_name: dict[str, deque[dict[str, str]]] = defaultdict(deque)
+        for row in expected_rows:
             name = str(row.get("Name", "")).strip().upper()
             if name:
-                loaded_by_name[name].append(row)
+                expected_by_name[name].append(row)
 
-        for expected in expected_rows:
-            name = str(expected.get("Name", "")).strip().upper()
+        for _, series in frame.iterrows():
+            row = {
+                key: ("" if pd.isna(value) else str(value).strip())
+                for key, value in series.to_dict().items()
+            }
+            name = str(row.get("Name", "")).strip().upper()
             if not name:
                 continue
-            bucket = loaded_by_name.get(name)
-            if not bucket:
-                result.missing.append(name)
+            queue = expected_by_name.get(name)
+            if not queue:
+                if name not in result.missing:
+                    result.missing.append(name)
                 continue
-            actual = bucket.popleft()
-            if export_fields_for_compare(actual) != export_fields_for_compare(expected):
+            expected = queue.popleft()
+            if export_fields_for_compare(row) != export_fields_for_compare(expected):
                 if name not in result.field_mismatches:
                     result.field_mismatches.append(name)
+
+        for name, queue in expected_by_name.items():
+            for _ in queue:
+                if name not in result.missing:
+                    result.missing.append(name)
+
         return result

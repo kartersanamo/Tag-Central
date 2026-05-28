@@ -33,9 +33,9 @@ if (-not (Test-Path "assets\icon.ico")) {
 Write-Host "==> Running PyInstaller"
 & (Join-Path $Root ".venv\Scripts\pyinstaller.exe") --noconfirm --clean scripts\tag_central.spec
 
-$ExePath = Join-Path $Root "dist\Tag Center.exe"
+$ExePath = Join-Path $Root "dist\Tag Center\Tag Center.exe"
 if (-not (Test-Path $ExePath)) {
-    throw "Expected $ExePath"
+    throw "Expected $ExePath (onedir build)"
 }
 
 Write-Host ""

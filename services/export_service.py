@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
+from services.pandas_lazy import get_pandas
 
 
 class ExportService:
@@ -15,6 +15,7 @@ class ExportService:
 
     def write_exports(self, exports: dict[str, list[dict[str, object]]]) -> list[Path]:
         """Writes export CSV files and returns paths written."""
+        pd = get_pandas()
         self._export_folder.mkdir(parents=True, exist_ok=True)
         written_paths: list[Path] = []
 
