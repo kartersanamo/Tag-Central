@@ -83,10 +83,10 @@ class TagRecord:
         """Updates Proficy-side data from an import row."""
         self.proficy_row_data = dict(row_data)
         self.proficy_name = row_data.get("Name", self.tag_name).strip().upper()
-        from services.address_normalizer import normalize_address
+        from services.address_normalizer import is_resolvable_address, normalize_address
 
         address = normalize_address(self._address_from_row(row_data))
-        if address:
+        if is_resolvable_address(address):
             self.linked_address = address
         if description is not None:
             pass  # canonical may be set separately

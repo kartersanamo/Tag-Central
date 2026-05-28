@@ -2,7 +2,11 @@
 
 import unittest
 
-from services.address_normalizer import addresses_equivalent, normalize_address
+from services.address_normalizer import (
+    addresses_equivalent,
+    is_resolvable_address,
+    normalize_address,
+)
 
 
 class TestAddressNormalizer(unittest.TestCase):
@@ -16,3 +20,8 @@ class TestAddressNormalizer(unittest.TestCase):
 
     def test_ai_address(self) -> None:
         self.assertEqual(normalize_address("%ai0137"), "%AI137")
+
+    def test_symbolic_placeholder_is_not_resolvable(self) -> None:
+        self.assertEqual(normalize_address("<Symbolic>"), "<SYMBOLIC>")
+        self.assertFalse(is_resolvable_address("<Symbolic>"))
+        self.assertFalse(addresses_equivalent("<Symbolic>", "<Symbolic>"))

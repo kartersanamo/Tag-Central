@@ -6,6 +6,7 @@ import re
 
 _GMR_PATTERN = re.compile(r"^%([GMR])(\d+)$", re.IGNORECASE)
 _AI_PATTERN = re.compile(r"^%AI(\d+)$", re.IGNORECASE)
+_PLACEHOLDER_ADDRESSES = frozenset({"<SYMBOLIC>", "SYMBOLIC"})
 
 
 def normalize_address(address: str) -> str:
@@ -31,8 +32,27 @@ def normalize_address(address: str) -> str:
     return cleaned
 
 
+def is_resolvable_address(address: str) -> bool:
+    """
+    Returns True when an address is a real PLC reference.
+
+    Proficy array table elements often use ``<Symbolic>`` as a placeholder; those
+    must not participate in address linking or mismatch grouping.
+    """
+    normalized = normalize_address(address)
+    if not normalized:
+        return False
+    if normalized in _PLACEHOLDER_ADDRESSES:
+        return False
+    if normalized.startswith("<") and normalized.endswith(">"):
+        return False
+    return True
+
+
 def addresses_equivalent(left: str, right: str) -> bool:
     """Returns True when two addresses normalize to the same value."""
     left_norm = normalize_address(left)
     right_norm = normalize_address(right)
-    return bool(left_norm) and left_norm == right_norm
+    if not is_resolvable_address(left_norm) or not is_resolvable_address(right_norm):
+        return False
+    return left_norm == right_norm

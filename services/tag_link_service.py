@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from models.tag_record import TagRecord
-from services.address_normalizer import addresses_equivalent, normalize_address
+from services.address_normalizer import (
+    addresses_equivalent,
+    is_resolvable_address,
+    normalize_address,
+)
 from services.debug_logger import debug_logger
 from services.tag_alias_rules import TagAliasRules
 
@@ -62,7 +66,7 @@ class TagLinkService:
                 )
                 return LinkResult(canonical_tag=tag_name, method="cimplicity_pt_id", ambiguous_tags=[])
 
-        if normalized_address:
+        if is_resolvable_address(normalized_address):
             address_matches = self._tags_by_address(tags, normalized_address)
             if len(address_matches) == 1:
                 debug_logger.log(
@@ -91,7 +95,7 @@ class TagLinkService:
                     ambiguous_tags=address_matches,
                 )
 
-        if normalized_address:
+        if is_resolvable_address(normalized_address):
             for variant in self._aliases.expand(pt_id):
                 if variant in tags:
                     record = tags[variant]

@@ -52,6 +52,20 @@ class TestInternalMismatchService(unittest.TestCase):
         self.assertEqual(result.mismatch_types["TAG_A"], MISMATCH_SHARED_ADDRESS)
         self.assertTrue(result.group_labels["TAG_A"].startswith("A"))
 
+    def test_symbolic_array_indices_are_not_shared_address_conflicts(self) -> None:
+        tags = {}
+        for tank in ("BS_1P", "BS_1S", "BS_6P"):
+            tag_name = f"{tank}_TANK_TABLE[299]"
+            tags[tag_name] = TagRecord(
+                tag_name=tag_name,
+                description=f"{tank} TANK VOLUME @ 299",
+                proficy_row_data={"IOAddress": "<Symbolic>"},
+                linked_address="<SYMBOLIC>",
+            )
+        result = InternalMismatchService().calculate(tags)
+        self.assertEqual(result.conflicted_tags, set())
+        self.assertNotIn(MISMATCH_SHARED_ADDRESS, result.mismatch_types.values())
+
 
 if __name__ == "__main__":
     unittest.main()

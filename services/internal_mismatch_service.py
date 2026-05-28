@@ -7,7 +7,7 @@ import re
 
 from app_config import MISMATCH_PREFIX_MIN_LENGTH
 from models.tag_record import TagRecord
-from services.address_normalizer import normalize_address
+from services.address_normalizer import is_resolvable_address, normalize_address
 
 
 MISMATCH_DUPLICATE_DESCRIPTION = "duplicate_description"
@@ -27,9 +27,12 @@ class InternalMismatchResult:
 
 
 def _tag_address(record: TagRecord) -> str:
-    if record.linked_address:
-        return record.linked_address
-    return normalize_address(TagRecord._address_from_row(record.proficy_row_data))
+    if record.linked_address and is_resolvable_address(record.linked_address):
+        return normalize_address(record.linked_address)
+    candidate = normalize_address(TagRecord._address_from_row(record.proficy_row_data))
+    if is_resolvable_address(candidate):
+        return candidate
+    return ""
 
 
 def _pt_id_prefix(tag_name: str) -> str:

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from models.tag_record import SYNC_PROFICY_ONLY, TagRecord
-from services.address_normalizer import normalize_address
+from services.address_normalizer import is_resolvable_address, normalize_address
 
 
 class TagRepository:
@@ -96,10 +96,12 @@ class TagRepository:
         cimplicity_pt_id = row.get("cimplicity_pt_id", "").strip().upper()
         proficy_name = row.get("proficy_name", "").strip().upper() or tag_name
         linked_address = row.get("linked_address", "").strip().upper()
+        if linked_address and not is_resolvable_address(linked_address):
+            linked_address = ""
         if not linked_address and proficy_row_data:
-            linked_address = normalize_address(
-                TagRecord._address_from_row(proficy_row_data)
-            )
+            candidate = normalize_address(TagRecord._address_from_row(proficy_row_data))
+            if is_resolvable_address(candidate):
+                linked_address = candidate
         sync_status = row.get("sync_status", "").strip() or SYNC_PROFICY_ONLY
         link_method = row.get("link_method", "").strip() or None
 
