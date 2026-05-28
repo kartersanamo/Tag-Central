@@ -72,6 +72,8 @@ from ui.tag_diff_dialog import TagDiffDialog
 class AppController:
     """Coordinates UI, persistence, import logic, and exports."""
 
+    _ARRAY_INDEX_PATTERN = re.compile(r"^(?P<base>.+)\[(?P<index>\d+)\]$")
+
     def __init__(self, root: tk.Tk) -> None:
         self._repository = TagRepository(DATABASE_FILE)
         self._loader = SpreadsheetLoader()
@@ -103,6 +105,8 @@ class AppController:
         self._sort_column = "tag_name"
         self._sort_descending = False
         self._sort_before_internal_mismatches: tuple[str, bool] | None = None
+        self._array_children_by_base: dict[str, list[str]] = {}
+        self._expanded_array_bases: set[str] = set()
         self._column_heading_labels = {
             "row_number": "#",
             "tag_name": "Tag",
@@ -181,6 +185,7 @@ class AppController:
             "<<ComboboxSelected>>", lambda *_: self.refresh_table()
         )
         self._window.tree.bind("<Button-3>", self._show_context_menu)
+        self._window.tree.bind("<Double-1>", self._on_tree_double_click)
         for column_name in self._column_heading_labels:
             self._window.tree.heading(
                 column_name,
@@ -191,15 +196,18 @@ class AppController:
             1, command=self.align_selected_to_cimplicity
         )
         self._window.context_menu.entryconfigure(
-            2, command=self.jump_to_selected_mismatches
+            2, command=self.toggle_selected_array_indices
         )
-        self._window.context_menu.entryconfigure(3, command=self.view_selected_tag_diff)
         self._window.context_menu.entryconfigure(
-            4, command=self.increment_selected_descriptions
+            3, command=self.jump_to_selected_mismatches
         )
-        self._window.context_menu.entryconfigure(6, command=self.merge_selected_tags)
-        self._window.context_menu.entryconfigure(8, command=self.add_new_tag)
-        self._window.context_menu.entryconfigure(10, command=self.delete_selected_tags)
+        self._window.context_menu.entryconfigure(4, command=self.view_selected_tag_diff)
+        self._window.context_menu.entryconfigure(
+            5, command=self.increment_selected_descriptions
+        )
+        self._window.context_menu.entryconfigure(7, command=self.merge_selected_tags)
+        self._window.context_menu.entryconfigure(9, command=self.add_new_tag)
+        self._window.context_menu.entryconfigure(11, command=self.delete_selected_tags)
         self._refresh_tree_heading_sort_markers()
 
     def _on_tree_heading_click(self, column_name: str) -> None:
@@ -265,12 +273,29 @@ class AppController:
             align_label = f"Align {selected_count} tags to Cimplicity"
             delete_label = f"Delete {selected_count} tags"
         self._window.context_menu.entryconfigure(1, label=align_label)
-        self._window.context_menu.entryconfigure(10, label=delete_label)
+        self._window.context_menu.entryconfigure(11, label=delete_label)
+
+        array_toggle_label = "Toggle Array Indices"
+        can_toggle_array = False
+        if len(selection) == 1:
+            canonical = self._canonical_tag_name(selection[0])
+            if canonical and self._is_array_parent(canonical):
+                can_toggle_array = True
+                array_toggle_label = (
+                    "Hide Array Indices"
+                    if canonical in self._expanded_array_bases
+                    else "Show Array Indices"
+                )
+        self._window.context_menu.entryconfigure(
+            2,
+            label=array_toggle_label,
+            state="normal" if can_toggle_array else "disabled",
+        )
 
         jump_candidates = self._selected_mismatch_group_tags(selection)
         can_jump = len(jump_candidates) > 1
         self._window.context_menu.entryconfigure(
-            2, state="normal" if can_jump else "disabled"
+            3, state="normal" if can_jump else "disabled"
         )
 
         can_diff = (
@@ -282,12 +307,12 @@ class AppController:
             )
         )
         self._window.context_menu.entryconfigure(
-            3, state="normal" if can_diff else "disabled"
+            4, state="normal" if can_diff else "disabled"
         )
 
         can_merge = len(selection) == 2 and all(tag in self._tags for tag in selection)
         self._window.context_menu.entryconfigure(
-            6, state="normal" if can_merge else "disabled"
+            7, state="normal" if can_merge else "disabled"
         )
 
         can_increment = self._can_increment_descriptions(selection)
@@ -302,9 +327,22 @@ class AppController:
             increment_label = "Increment descriptions"
             increment_state = "disabled"
         self._window.context_menu.entryconfigure(
-            4, label=increment_label, state=increment_state
+            5, label=increment_label, state=increment_state
         )
         self._window.context_menu.post(event.x_root, event.y_root)
+
+    def _on_tree_double_click(self, event: tk.Event) -> None:
+        assert self._window.tree
+        item_id = self._window.tree.identify_row(event.y)
+        if not item_id:
+            return
+        tag_name = self._canonical_tag_name(item_id)
+        if tag_name and self._is_array_parent(tag_name):
+            if tag_name in self._expanded_array_bases:
+                self._expanded_array_bases.discard(tag_name)
+            else:
+                self._expanded_array_bases.add(tag_name)
+            self.refresh_table()
 
     def _selected_mismatch_group_tags(self, tag_names: list[str]) -> list[str]:
         """Returns sorted tags in the clicked/selected mismatch group."""
@@ -1223,6 +1261,7 @@ class AppController:
         assert self._window.tree
         self._refresh_tree_heading_sort_markers()
         self._recalculate_conflicted_tags()
+        self._rebuild_array_index_map()
         query = self._window.search_var.get().strip().lower()
         view_conflicts_only = self._window.view_conflicts_var.get()
 
@@ -1247,6 +1286,10 @@ class AppController:
         find_match_count = 0
 
         for tag_name, record in self._tags.items():
+            array_base = self._array_base_name(tag_name)
+            if array_base and array_base in self._array_children_by_base:
+                if array_base not in self._expanded_array_bases:
+                    continue
             if view_conflicts_only and tag_name not in visible_conflict_scope:
                 continue
             if self._active_vessel_filter and self._active_vessel_filter not in record.vessels:
@@ -1366,6 +1409,7 @@ class AppController:
             else:
                 row_tag = record.tag_name
                 row_description = record.description
+            row_tag = self._display_tag_label(tag_name, record)
             display_tag, display_description = self._format_find_replace_display(
                 row_tag, row_description, find_text, find_scope, highlight=bool(find_text)
             )
@@ -1411,6 +1455,80 @@ class AppController:
         if find_active:
             return ("find_match",)
         return ()
+
+    def _rebuild_array_index_map(self) -> None:
+        """Builds base->children map for array index tags and prunes stale expansions."""
+        children: dict[str, list[str]] = {}
+        for tag_name in self._tags:
+            base = self._array_base_name(tag_name)
+            if not base:
+                continue
+            children.setdefault(base, []).append(tag_name)
+        for base in children:
+            children[base].sort()
+        self._array_children_by_base = children
+        self._expanded_array_bases.intersection_update(children.keys())
+
+    def _array_base_name(self, tag_name: str) -> str:
+        match = self._ARRAY_INDEX_PATTERN.match(tag_name.strip().upper())
+        if not match:
+            return ""
+        return str(match.group("base")).strip().upper()
+
+    def _array_index_value(self, tag_name: str) -> int | None:
+        match = self._ARRAY_INDEX_PATTERN.match(tag_name.strip().upper())
+        if not match:
+            return None
+        return int(str(match.group("index")))
+
+    def _is_array_parent(self, tag_name: str) -> bool:
+        parent = self._tags.get(tag_name)
+        if parent is None:
+            return False
+        if tag_name not in self._array_children_by_base:
+            return False
+        array_dim = str(parent.proficy_row_data.get("ArrayDimension1", "")).strip()
+        return array_dim not in {"", "0"}
+
+    def _display_tag_label(self, tag_name: str, record: TagRecord) -> str:
+        base = self._array_base_name(tag_name)
+        if base:
+            index = self._array_index_value(tag_name)
+            index_text = f"{index:03d}" if index is not None else "?"
+            return f"  [{index_text}] {tag_name}"
+        if self._is_array_parent(tag_name):
+            child_count = len(self._array_children_by_base.get(tag_name, []))
+            array_dim = str(record.proficy_row_data.get("ArrayDimension1", "")).strip()
+            prefix = "▾" if tag_name in self._expanded_array_bases else "▸"
+            return f"{prefix} {tag_name}  ARRAY[{array_dim}] indices:{child_count}"
+        return tag_name
+
+    def _canonical_tag_name(self, item_id: str) -> str:
+        tag_name = str(item_id).strip().upper()
+        if tag_name in self._tags:
+            return tag_name
+        return ""
+
+    def toggle_selected_array_indices(self) -> None:
+        selected = self._get_selected_tag_names()
+        if len(selected) != 1:
+            messagebox.showinfo(
+                "Toggle Array Indices",
+                "Select exactly one array parent tag to toggle its indices.",
+            )
+            return
+        tag_name = selected[0]
+        if not self._is_array_parent(tag_name):
+            messagebox.showinfo(
+                "Toggle Array Indices",
+                "Selected tag is not an array parent with index rows.",
+            )
+            return
+        if tag_name in self._expanded_array_bases:
+            self._expanded_array_bases.discard(tag_name)
+        else:
+            self._expanded_array_bases.add(tag_name)
+        self.refresh_table()
 
     def _apply_table_row_payloads(
         self, payloads: list[dict[str, object]], snapshot: dict[str, object]
@@ -1469,6 +1587,7 @@ class AppController:
             else:
                 row_tag = record.tag_name
                 row_description = record.description
+            row_tag = self._display_tag_label(tag_name, record)
 
             display_tag, display_description = self._format_find_replace_display(
                 row_tag,

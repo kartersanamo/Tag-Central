@@ -211,6 +211,7 @@ class MainWindow:
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Edit Tag")
         self.context_menu.add_command(label="Align to Cimplicity")
+        self.context_menu.add_command(label="Toggle Array Indices", state="disabled")
         self.context_menu.add_command(label="Jump to Mismatches", state="disabled")
         self.context_menu.add_command(label="View Tag Diff", state="disabled")
         self.context_menu.add_command(label="Increment descriptions", state="disabled")

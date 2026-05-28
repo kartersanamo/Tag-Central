@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 from app_config import MISMATCH_PREFIX_MIN_LENGTH
 from models.tag_record import TagRecord
@@ -12,6 +13,7 @@ from services.address_normalizer import normalize_address
 MISMATCH_DUPLICATE_DESCRIPTION = "duplicate_description"
 MISMATCH_SHARED_ADDRESS = "shared_address"
 MISMATCH_PT_ID_PREFIX = "pt_id_prefix"
+_ARRAY_INDEX_PATTERN = re.compile(r"^(?P<base>.+)\[(?P<index>\d+)\]$")
 
 
 @dataclass
@@ -38,6 +40,13 @@ def _pt_id_prefix(tag_name: str) -> str:
     if len(prefix) < MISMATCH_PREFIX_MIN_LENGTH:
         return ""
     return prefix
+
+
+def _array_base(tag_name: str) -> str:
+    match = _ARRAY_INDEX_PATTERN.match(tag_name.strip().upper())
+    if not match:
+        return ""
+    return str(match.group("base")).strip().upper()
 
 
 class InternalMismatchService:
@@ -72,26 +81,31 @@ class InternalMismatchService:
     def _duplicate_description_groups(
         tags: dict[str, TagRecord],
     ) -> list[set[str]]:
-        descriptions: dict[str, list[str]] = {}
+        descriptions: dict[str, dict[str, str]] = {}
         for tag_name, record in tags.items():
             description = record.description.strip().upper()
             if not description:
                 continue
-            descriptions.setdefault(description, []).append(tag_name)
+            family = _array_base(tag_name) or tag_name
+            descriptions.setdefault(description, {})[family] = tag_name
         return [
-            set(tag_names) for tag_names in descriptions.values() if len(tag_names) > 1
+            set(families.values())
+            for families in descriptions.values()
+            if len(families) > 1
         ]
 
     @staticmethod
     def _shared_address_groups(tags: dict[str, TagRecord]) -> list[set[str]]:
-        addresses: dict[str, list[str]] = {}
+        addresses: dict[str, dict[str, str]] = {}
         for tag_name, record in tags.items():
             address = _tag_address(record)
             if not address:
                 continue
-            addresses.setdefault(address, []).append(tag_name)
+            family = _array_base(tag_name) or tag_name
+            addresses.setdefault(address, {})[family] = tag_name
         groups: list[set[str]] = []
-        for tag_names in addresses.values():
+        for family_map in addresses.values():
+            tag_names = list(family_map.values())
             if len(tag_names) <= 1:
                 continue
             descriptions = {tags[name].description.strip().upper() for name in tag_names}
@@ -112,6 +126,8 @@ class InternalMismatchService:
         buckets: dict[tuple[str, str], list[str]] = {}
         for tag_name, record in tags.items():
             if tag_name in already_grouped:
+                continue
+            if _array_base(tag_name):
                 continue
             prefix = _pt_id_prefix(tag_name)
             address = _tag_address(record)
