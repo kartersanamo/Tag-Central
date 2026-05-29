@@ -131,7 +131,7 @@ python scripts/generate_icons.py
 | `alias_rules.json` | Prefix alias pairs for linking |
 | `backups/` | DB and JSON snapshots |
 | **`Exports/`** next to the app | Proficy batch CSVs and Cimplicity manual reports (e.g. `Downloads/Exports` when the `.app` is in Downloads) |
-| **`Documentation/`** next to the app | Auto-generated engineering docs (HTML dashboard, Excel, CSV, Word) in timestamped subfolders |
+| **`Documentation/`** in the app folder | Auto-generated docs under `Documentation/TagCentral_YYYYMMDD_HHMMSS/` (e.g. `Tag Central/Documentation/` when running from source) |
 
 ### Proficy import columns
 

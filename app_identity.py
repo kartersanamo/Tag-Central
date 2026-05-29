@@ -38,21 +38,20 @@ def user_data_dir() -> Path:
 
 def app_install_dir() -> Path:
     """
-    Directory where the user placed the application (parent of the .app or install folder).
+    Directory where the application lives (for Exports / Documentation siblings).
 
-    macOS: folder containing Tag Center.app (e.g. ~/Downloads if the app lives there)
-    Windows: folder containing the Tag Center onedir (sibling to Tag Center.exe's folder)
-    Development: parent of the project repository
+    macOS .app: folder containing Tag Center.app (e.g. ~/Downloads)
+    Windows onedir: folder containing the Tag Center install folder
+    Development: project root (folder with main.py), e.g. .../Tag Central/
     """
     if is_frozen():
         executable = Path(sys.executable).resolve()
         if sys.platform == "darwin":
-            # .../Tag Center.app/Contents/MacOS/Tag Center
+            # .../Tag Center.app/Contents/MacOS/Tag Center → .../Downloads
             return executable.parent.parent.parent.parent
-        # .../Tag Center/Tag Center.exe (onedir)
+        # .../Tag Center/Tag Center.exe → parent of onedir folder
         return executable.parent.parent
-    root = Path(__file__).resolve().parent
-    return root.parent
+    return Path(__file__).resolve().parent
 
 
 def export_dir(*, project_root: Path | None = None) -> Path:
@@ -69,7 +68,7 @@ def documentation_dir(*, project_root: Path | None = None) -> Path:
     """
     Root folder for generated documentation packages (timestamped subfolders).
 
-    Example: ~/Downloads/Tag Center.app → ~/Downloads/Documentation/
+    Example: .../Tag Central/Documentation/ or ~/Downloads/Documentation/ (.app in Downloads)
     """
     del project_root
     return app_install_dir() / "Documentation"
