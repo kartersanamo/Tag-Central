@@ -109,6 +109,7 @@ python scripts/generate_icons.py
 | Internal mismatches | Filter **View Internal Mismatches**; groups **G** (same description), **A** (same address, different descriptions), **P** (same address + PT_ID prefix family) |
 | Tag diff | Context menu **View Tag Diff** — canonical vs Proficy vs Cimplicity |
 | Merge tags | Select two tags → **Merge Tags…** (one survivor, one Proficy export) |
+| **Documentation** | **Documentation** button — IO lists, alarm lists, tag dictionary, commissioning, network map, operator manual, change log → HTML dashboard, Excel, CSV, Word |
 | Align / increment | Align to Cimplicity; increment descriptions for **G** groups |
 | Auto-backup | Before large bulk actions (review create/dismiss all, big deletes, large imports) |
 | Backups | Manual backup/restore page |
@@ -130,6 +131,7 @@ python scripts/generate_icons.py
 | `alias_rules.json` | Prefix alias pairs for linking |
 | `backups/` | DB and JSON snapshots |
 | **`Exports/`** next to the app | Proficy batch CSVs and Cimplicity manual reports (e.g. `Downloads/Exports` when the `.app` is in Downloads) |
+| **`Documentation/`** next to the app | Auto-generated engineering docs (HTML dashboard, Excel, CSV, Word) in timestamped subfolders |
 
 ### Proficy import columns
 

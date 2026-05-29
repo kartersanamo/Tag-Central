@@ -31,6 +31,7 @@ hiddenimports = _project_hiddenimports() + [
     "pandas",
     "pandas.plotting",
     "openpyxl",
+    "docx",
     "pandas._libs.tslibs.timedeltas",
     "pandas._libs.tslibs.nattype",
     "pandas._libs.tslibs.np_datetime",

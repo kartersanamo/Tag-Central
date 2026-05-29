@@ -65,6 +65,16 @@ def export_dir(*, project_root: Path | None = None) -> Path:
     return app_install_dir() / "Exports"
 
 
+def documentation_dir(*, project_root: Path | None = None) -> Path:
+    """
+    Root folder for generated documentation packages (timestamped subfolders).
+
+    Example: ~/Downloads/Tag Center.app → ~/Downloads/Documentation/
+    """
+    del project_root
+    return app_install_dir() / "Documentation"
+
+
 def assets_dir() -> Path:
     return bundle_root() / "assets"
 

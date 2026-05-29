@@ -1,6 +1,8 @@
 """Application orchestration and event handlers."""
 
 from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
 import sys
 
 import tkinter as tk
@@ -37,7 +39,9 @@ from services.cross_program_sync_service import (
     normalize_description,
 )
 from services.debug_logger import debug_logger
+from app_identity import documentation_dir
 from services.description_suggester import DescriptionSuggester
+from services.documentation_service import DocumentationService
 from services.address_normalizer import is_resolvable_address, normalize_address
 from services.export_queue_service import ExportQueueService
 from services.export_service import ExportService
@@ -71,6 +75,7 @@ from ui.import_dry_run_dialog import ImportDryRunDialog
 from ui.merge_tags_dialog import MergeTagsDialog
 from ui.missing_description_dialog import MissingDescriptionDialog
 from ui.tag_diff_dialog import TagDiffDialog
+from ui.documentation_dialog import DocumentationDialog
 
 
 class AppController:
@@ -112,6 +117,9 @@ class AppController:
         self._mismatch_service = InternalMismatchService()
         self._proficy_analyzer = ProficyImportAnalyzer(self._sync)
         self._merge_service = TagMergeService()
+        self._documentation = DocumentationService(
+            sync_status_label=self._sync_status_label
+        )
         self._ui_worker = UiWorker(root)
         self._persist_after_id: str | None = None
         self._refresh_generation = 0
@@ -172,6 +180,7 @@ class AppController:
         )
         assert self._window.find_scope_combo
         assert self._window.export_changes_button
+        assert self._window.documentation_button
         assert self._window.review_export_queue_button
         assert self._window.change_tag_button and self._window.vessel_combo
         assert self._window.array_expand_toggle_button
@@ -183,6 +192,7 @@ class AppController:
         self._window.cimplicity_tasks_button.configure(command=self.open_cimplicity_tasks)
         self._window.import_button.configure(command=self.import_proficy_spreadsheet)
         self._window.backups_button.configure(command=self.open_backups_page)
+        self._window.documentation_button.configure(command=self.generate_documentation)
         self._window.refresh_button.configure(command=self.refresh_from_disk)
         self._window.add_tag_button.configure(command=self.add_new_tag)
         self._window.find_replace_button.configure(
@@ -2941,6 +2951,99 @@ class AppController:
             loading_delete.close()
         messagebox.showinfo("Deleted", f"Deleted {len(selected_tags)} tag(s).")
 
+    def generate_documentation(self) -> None:
+        """Opens documentation wizard and writes a package next to the app."""
+        vessels = sorted(
+            {
+                vessel
+                for record in self._tags.values()
+                for vessel in record.vessels
+                if vessel.strip()
+            }
+        )
+        options = DocumentationDialog(self._window.root, vessels).show()
+        if options is None:
+            return
+
+        vessel = str(options.get("vessel", "ALL")).strip()
+        vessel_filter = None if vessel.upper() == "ALL" else vessel
+        doc_types = list(options.get("doc_types", []))
+
+        loading = LoadingDialog(self._window.root, title="Generating Documentation...")
+        loading.show("Building documentation tables...")
+        try:
+            tables = self._documentation.build_tables(
+                self._tags,
+                selected_types=doc_types,
+                vessel_filter=vessel_filter,
+                pending_exports=self._export_queue.all_entries(),
+            )
+            if not tables:
+                messagebox.showinfo(
+                    "No Documentation",
+                    "No tables were generated for the selected options.",
+                    parent=self._window.root,
+                )
+                return
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = documentation_dir() / f"TagCentral_{timestamp}"
+            loading.update_status("Writing export files...")
+            result = self._documentation.write_package(
+                tables,
+                output_dir,
+                write_html=bool(options.get("html")),
+                write_excel=bool(options.get("excel")),
+                write_csv=bool(options.get("csv")),
+                write_word=bool(options.get("word")),
+                vessel_filter=vessel,
+                tag_count=len(self._tags),
+            )
+        except Exception as error:
+            messagebox.showerror(
+                "Documentation Failed",
+                f"Could not generate documentation.\n\n{error}",
+                parent=self._window.root,
+            )
+            return
+        finally:
+            loading.close()
+
+        index_file = output_dir / "index.html"
+        lines = [
+            f"Generated {len(tables)} document section(s).",
+            f"Output folder:\n{output_dir}",
+        ]
+        if bool(options.get("html")) and index_file.exists():
+            lines.append(f"\nOpen in browser:\n{index_file}")
+        if bool(options.get("word")) and not any(
+            path.suffix == ".docx" for path in result.written_files
+        ):
+            lines.append(
+                "\nWord export was skipped (install python-docx for .docx support)."
+            )
+        messagebox.showinfo(
+            "Documentation Generated",
+            "\n".join(lines),
+            parent=self._window.root,
+        )
+        self._reveal_path(output_dir)
+
+    def _reveal_path(self, path: Path) -> None:
+        """Opens a folder in Finder / Explorer."""
+        try:
+            target = path.resolve()
+            if sys.platform == "darwin":
+                import subprocess
+
+                subprocess.run(["open", str(target)], check=False)
+            elif sys.platform == "win32":
+                import os
+
+                os.startfile(target)  # type: ignore[attr-defined]
+        except OSError:
+            pass
+
     def export_pending_changes(self) -> bool:
         """Writes all pending vessel batches to export files."""
         root = self._window.root
@@ -3014,22 +3117,8 @@ class AppController:
 
     def _reveal_export_folder(self) -> None:
         """Opens the export folder in Finder / Explorer when possible."""
-        try:
-            export_path = EXPORT_FOLDER.resolve()
-            export_path.mkdir(parents=True, exist_ok=True)
-            if sys.platform == "darwin":
-                import subprocess
-
-                subprocess.run(
-                    ["open", str(export_path)],
-                    check=False,
-                )
-            elif sys.platform == "win32":
-                import os
-
-                os.startfile(export_path)  # type: ignore[attr-defined]
-        except OSError:
-            pass
+        EXPORT_FOLDER.mkdir(parents=True, exist_ok=True)
+        self._reveal_path(EXPORT_FOLDER)
 
     def _validate_export_files(
         self,
