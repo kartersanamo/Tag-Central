@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import os
 import sys
-import tkinter as tk
+
+import customtkinter as ctk
 
 from app_identity import APP_NAME, APP_VERSION, ensure_user_data_layout, is_frozen
+from ui.ctk_theme import apply_ctk_theme
 
 # Imported at module level so PyInstaller always bundles the full application.
 import app_config  # noqa: F401
 import app_controller  # noqa: F401
 
 
-def _apply_window_icon(root: tk.Tk) -> None:
+def _apply_window_icon(root: ctk.CTk) -> None:
     """Sets the window (and taskbar on Windows) icon when assets are available."""
     from app_identity import icon_ico_path, icon_png_path
 
@@ -23,14 +25,14 @@ def _apply_window_icon(root: tk.Tk) -> None:
             return
         png_path = icon_png_path()
         if png_path.exists():
-            icon_image = tk.PhotoImage(file=str(png_path))
+            icon_image = ctk.PhotoImage(file=str(png_path))
             root.iconphoto(True, icon_image)
             root._tag_central_icon = icon_image  # prevent garbage collection
-    except tk.TclError:
+    except Exception:
         pass
 
 
-def _show_startup_error(root: tk.Tk, error: BaseException) -> None:
+def _show_startup_error(root: ctk.CTk, error: BaseException) -> None:
     """Shows a dialog when the packaged app fails during startup."""
     import traceback
     from tkinter import messagebox
@@ -47,16 +49,17 @@ def _show_startup_error(root: tk.Tk, error: BaseException) -> None:
             f"{details[:2000]}",
             parent=root,
         )
-    except tk.TclError:
+    except Exception:
         print(details, file=sys.stderr)
 
 
 def main() -> None:
     """Starts the application with an immediate splash, then loads the main UI."""
+    apply_ctk_theme()
     if is_frozen():
         ensure_user_data_layout()
 
-    root = tk.Tk()
+    root = ctk.CTk()
     root.withdraw()
     splash = None
 

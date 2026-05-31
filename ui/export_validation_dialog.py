@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import scrolledtext, ttk
+import customtkinter as ctk
 
 from services.export_validation_service import ExportValidationResult
+from ui.ctk_dialog import CtkModalDialog
+from ui.ctk_theme import button_neutral_kwargs
 
 
 class ExportValidationDialog:
     """Summarizes per-file export validation."""
 
-    def __init__(self, parent: tk.Tk, results: list[ExportValidationResult]) -> None:
-        self._window = tk.Toplevel(parent)
-        self._window.title("Export Validation")
-        self._window.geometry("640x480")
-        self._window.transient(parent)
-
+    def __init__(self, parent: ctk.CTk, results: list[ExportValidationResult]) -> None:
+        self._window = CtkModalDialog(parent, "Export Validation", width=640, height=480)
         lines: list[str] = []
         for result in results:
             status = "OK" if result.ok else "ISSUES"
@@ -34,13 +31,12 @@ class ExportValidationDialog:
                 )
             lines.append("")
 
-        text = scrolledtext.ScrolledText(self._window, height=22, wrap="word")
-        text.pack(fill="both", expand=True, padx=14, pady=14)
-        text.insert("1.0", "\n".join(lines) if lines else "No files validated.")
-        text.configure(state="disabled")
-
-        ttk.Button(self._window, text="Close", command=self._window.destroy).pack(
-            pady=(0, 14)
+        self._window.add_readonly_text(
+            "\n".join(lines) if lines else "No files validated.",
+            height=360,
+        )
+        self._window.add_footer_button(
+            "Close", self._window.destroy, side="right", **button_neutral_kwargs()
         )
         self._window.grab_set()
         self._window.wait_window()

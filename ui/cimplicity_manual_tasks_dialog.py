@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 from typing import Callable
 
+import customtkinter as ctk
+
 from services.cimplicity_manual_tasks import CimplicityManualTasks
+from ui.ctk_theme import FONT_BODY, button_neutral_kwargs
+from ui.ctk_tree import create_data_treeview
 
 
 class CimplicityManualTasksDialog:
@@ -14,13 +18,13 @@ class CimplicityManualTasksDialog:
 
     def __init__(
         self,
-        parent: tk.Tk,
+        parent: ctk.CTk,
         tasks: CimplicityManualTasks,
         on_change: Callable[[], None] | None = None,
     ) -> None:
         self._tasks = tasks
         self._on_change = on_change
-        self._window = tk.Toplevel(parent)
+        self._window = ctk.CTkToplevel(parent)
         self._window.title("Cimplicity Manual Tasks")
         self._window.geometry("1250x650")
         self._window.transient(parent)
@@ -28,30 +32,35 @@ class CimplicityManualTasksDialog:
         self._select_all_var = tk.BooleanVar(value=False)
         self._status_var = tk.StringVar(value="")
 
-        ttk.Label(
-            self._window,
+        body = ctk.CTkFrame(self._window, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=14, pady=14)
+
+        ctk.CTkLabel(
+            body,
             text=(
                 "Manually update these changes in Cimplicity, then check them off. "
                 "Checked tasks are only removed when you click Clear Checked."
             ),
-            font=("Helvetica", 11),
+            font=FONT_BODY,
             wraplength=1180,
             justify="left",
-        ).pack(anchor="w", padx=14, pady=(12, 8))
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 8))
 
-        controls = ttk.Frame(self._window, padding=(14, 0, 14, 8))
-        controls.pack(fill="x")
-        ttk.Checkbutton(
-            controls, text="Select all", variable=self._select_all_var, command=self._select_all
+        controls = ctk.CTkFrame(body, fg_color="transparent")
+        controls.pack(fill="x", pady=(0, 8))
+        ctk.CTkCheckBox(
+            controls,
+            text="Select all",
+            variable=self._select_all_var,
+            command=self._select_all,
+            font=FONT_BODY,
         ).pack(side="left")
-        ttk.Label(controls, textvariable=self._status_var).pack(side="right")
+        ctk.CTkLabel(controls, textvariable=self._status_var, font=FONT_BODY).pack(side="right")
 
-        table_frame = ttk.Frame(self._window, padding=(14, 0, 14, 10))
-        table_frame.pack(fill="both", expand=True)
+        table_frame = ctk.CTkFrame(body)
+        table_frame.pack(fill="both", expand=True, pady=(0, 10))
         columns = ("done", "vessel", "tag", "field", "old", "new", "reason", "created")
-        self._tree = ttk.Treeview(
-            table_frame, columns=columns, show="headings", selectmode="extended"
-        )
         headings = {
             "done": "Done",
             "vessel": "Vessel",
@@ -72,32 +81,29 @@ class CimplicityManualTasksDialog:
             "reason": 260,
             "created": 190,
         }
-        for column in columns:
-            self._tree.heading(column, text=headings[column])
-            self._tree.column(column, width=widths[column], anchor="w")
-
-        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self._tree.yview)
-        self._tree.configure(yscrollcommand=y_scroll.set)
-        self._tree.pack(side="left", fill="both", expand=True)
-        y_scroll.pack(side="left", fill="y")
+        self._tree, _scroll = create_data_treeview(
+            table_frame, columns, headings, widths, height=16
+        )
+        self._tree.configure(selectmode="extended")
 
         self._tree.bind("<Double-1>", self._on_double_click)
         self._tree.bind("<space>", lambda *_: self._toggle_selected())
 
-        buttons = ttk.Frame(self._window, padding=(14, 0, 14, 14))
+        buttons = ctk.CTkFrame(body, fg_color="transparent")
         buttons.pack(fill="x")
-        ttk.Button(buttons, text="Toggle Selected", command=self._toggle_selected).pack(
-            side="left"
-        )
-        ttk.Button(buttons, text="Clear Checked", command=self._clear_checked).pack(
-            side="left", padx=(8, 0)
-        )
-        ttk.Button(buttons, text="Close", command=self._window.destroy).pack(side="right")
+        ctk.CTkButton(
+            buttons, text="Toggle Selected", command=self._toggle_selected, **button_neutral_kwargs()
+        ).pack(side="left")
+        ctk.CTkButton(
+            buttons, text="Clear Checked", command=self._clear_checked, **button_neutral_kwargs()
+        ).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(
+            buttons, text="Close", command=self._window.destroy, **button_neutral_kwargs()
+        ).pack(side="right")
 
         self._render()
 
     def show_modal(self) -> None:
-        """Blocks until the user closes this dialog."""
         self._window.grab_set()
         self._window.wait_window()
 
@@ -162,4 +168,3 @@ class CimplicityManualTasksDialog:
             return
         self._tree.selection_set(row_id)
         self._toggle_selected()
-

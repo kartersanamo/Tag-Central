@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import tkinter as tk
 from typing import Callable
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, simpledialog
+
+import customtkinter as ctk
 
 from services.backup_service import BackupService
+from ui.ctk_theme import FONT_BODY, FONT_TITLE, button_accent_kwargs, button_neutral_kwargs
+from ui.ctk_tree import create_data_treeview
 
 
 class BackupsDialog:
@@ -14,7 +18,7 @@ class BackupsDialog:
 
     def __init__(
         self,
-        parent: tk.Tk,
+        parent: ctk.CTk,
         backup_service: BackupService,
         on_restore: Callable[[str], bool],
         on_revert_latest: Callable[[], bool],
@@ -23,7 +27,7 @@ class BackupsDialog:
         self._on_restore = on_restore
         self._on_revert_latest = on_revert_latest
 
-        self._window = tk.Toplevel(parent)
+        self._window = ctk.CTkToplevel(parent)
         self._window.title("Backups")
         self._window.geometry("1100x720")
         self._window.transient(parent)
@@ -33,75 +37,89 @@ class BackupsDialog:
         self._refresh_list()
 
     def show(self) -> None:
-        """Shows dialog modally."""
         self._window.wait_window()
 
     def _build_ui(self) -> None:
-        header = ttk.Frame(self._window, padding=14)
-        header.pack(fill="x")
-        ttk.Label(header, text="Backups", font=("Helvetica", 16, "bold")).pack(anchor="w")
-        ttk.Label(
+        header = ctk.CTkFrame(self._window, fg_color="transparent")
+        header.pack(fill="x", padx=14, pady=14)
+        ctk.CTkLabel(header, text="Backups", font=FONT_TITLE, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(
             header,
             text=(
                 "Manage database snapshots. Loading a backup replaces current data. "
                 "A temporary pre-load backup is saved automatically."
             ),
+            font=FONT_BODY,
+            anchor="w",
+            justify="left",
         ).pack(anchor="w", pady=(3, 0))
 
-        actions = ttk.Frame(self._window, padding=(14, 0, 14, 10))
-        actions.pack(fill="x")
-        ttk.Button(actions, text="Create Backup Now", command=self._create_backup_now).pack(
-            side="left", padx=(0, 8)
-        )
-        ttk.Button(actions, text="Load Selected Backup", command=self._load_selected).pack(
-            side="left", padx=8
-        )
-        ttk.Button(actions, text="Rename Selected", command=self._rename_selected).pack(
-            side="left", padx=8
-        )
-        ttk.Button(actions, text="Delete Selected", command=self._delete_selected).pack(
-            side="left", padx=8
-        )
-        ttk.Button(
+        actions = ctk.CTkFrame(self._window, fg_color="transparent")
+        actions.pack(fill="x", padx=14, pady=(0, 10))
+        ctk.CTkButton(
+            actions,
+            text="Create Backup Now",
+            command=self._create_backup_now,
+            **button_accent_kwargs(),
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            actions,
+            text="Load Selected Backup",
+            command=self._load_selected,
+            **button_neutral_kwargs(),
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            actions,
+            text="Rename Selected",
+            command=self._rename_selected,
+            **button_neutral_kwargs(),
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            actions,
+            text="Delete Selected",
+            command=self._delete_selected,
+            **button_neutral_kwargs(),
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
             actions,
             text="Revert Latest Backup",
             command=self._revert_latest,
+            **button_neutral_kwargs(),
         ).pack(side="left", padx=(18, 8))
-        ttk.Button(actions, text="Refresh", command=self._refresh_list).pack(
-            side="right", padx=(0, 8)
-        )
-        ttk.Button(actions, text="Close", command=self._window.destroy).pack(side="right")
+        ctk.CTkButton(
+            actions, text="Refresh", command=self._refresh_list, **button_neutral_kwargs()
+        ).pack(side="right", padx=(0, 8))
+        ctk.CTkButton(
+            actions, text="Close", command=self._window.destroy, **button_neutral_kwargs()
+        ).pack(side="right")
 
-        body = ttk.Frame(self._window, padding=(14, 0, 14, 14))
-        body.pack(fill="both", expand=True)
-        left = ttk.Frame(body)
-        right = ttk.Frame(body)
+        body = ctk.CTkFrame(self._window, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        left = ctk.CTkFrame(body)
+        right = ctk.CTkFrame(body)
         left.pack(side="left", fill="both", expand=True, padx=(0, 8))
         right.pack(side="left", fill="both", expand=True, padx=(8, 0))
 
-        self._tree = ttk.Treeview(
+        self._tree, _scroll = create_data_treeview(
             left,
-            columns=("name", "rows", "size_kb", "modified"),
-            show="headings",
-            selectmode="browse",
+            ("name", "rows", "size_kb", "modified"),
+            {
+                "name": "Backup",
+                "rows": "Rows",
+                "size_kb": "Size (KB)",
+                "modified": "Modified",
+            },
+            {"name": 280, "rows": 70, "size_kb": 90, "modified": 180},
+            height=20,
         )
-        self._tree.heading("name", text="Backup")
-        self._tree.heading("rows", text="Rows")
-        self._tree.heading("size_kb", text="Size (KB)")
-        self._tree.heading("modified", text="Modified")
-        self._tree.column("name", width=280, anchor="w")
-        self._tree.column("rows", width=70, anchor="center")
-        self._tree.column("size_kb", width=90, anchor="center")
-        self._tree.column("modified", width=180, anchor="w")
-        scroll = ttk.Scrollbar(left, orient="vertical", command=self._tree.yview)
-        self._tree.configure(yscrollcommand=scroll.set)
-        self._tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="left", fill="y")
+        self._tree.configure(selectmode="browse")
         self._tree.bind("<<TreeviewSelect>>", lambda *_: self._refresh_preview())
 
-        ttk.Label(right, text="Preview", font=("Helvetica", 12, "bold")).pack(anchor="w")
-        self._preview = tk.Text(right, wrap="none", height=30)
-        self._preview.pack(fill="both", expand=True)
+        ctk.CTkLabel(
+            right, text="Preview", font=(FONT_BODY[0], FONT_BODY[1], "bold"), anchor="w"
+        ).pack(anchor="w", padx=10, pady=(10, 6))
+        self._preview = ctk.CTkTextbox(right, height=500)
+        self._preview.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def _refresh_list(self) -> None:
         self._tree.delete(*self._tree.get_children())

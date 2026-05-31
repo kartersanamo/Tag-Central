@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import simpledialog, ttk
+from tkinter import simpledialog
+
+import customtkinter as ctk
+
+from ui.ctk_theme import FONT_BODY, button_accent_kwargs, button_neutral_kwargs
 
 
 class AddTagDialog:
     """Collects new-tag fields, program target, and queue behavior."""
 
-    def __init__(self, parent: tk.Tk, vessels: list[str]) -> None:
+    def __init__(self, parent: ctk.CTk, vessels: list[str]) -> None:
         self._result: dict[str, object] | None = None
-        self._window = tk.Toplevel(parent)
+        self._window = ctk.CTkToplevel(parent)
         self._window.title("Add Tag")
         self._window.geometry("620x540")
         self._window.transient(parent)
@@ -30,56 +34,73 @@ class AddTagDialog:
         return self._result
 
     def _build_ui(self, vessels: list[str]) -> None:
-        form = ttk.Frame(self._window, padding=14)
-        form.pack(fill="x")
+        form = ctk.CTkFrame(self._window, fg_color="transparent")
+        form.pack(fill="x", padx=14, pady=14)
 
-        ttk.Label(form, text="Tag").grid(row=0, column=0, sticky="w", pady=(0, 8))
-        ttk.Entry(form, textvariable=self._tag_var, width=52).grid(
-            row=0, column=1, sticky="ew", pady=(0, 8)
+        labels = ("Tag", "Description", "Address", "Program")
+        vars_ = (
+            self._tag_var,
+            self._description_var,
+            self._address_var,
+            self._program_var,
         )
-        ttk.Label(form, text="Description").grid(row=1, column=0, sticky="w", pady=(0, 8))
-        ttk.Entry(form, textvariable=self._description_var, width=52).grid(
-            row=1, column=1, sticky="ew", pady=(0, 8)
-        )
-        ttk.Label(form, text="Address").grid(row=2, column=0, sticky="w", pady=(0, 8))
-        ttk.Entry(form, textvariable=self._address_var, width=52).grid(
-            row=2, column=1, sticky="ew", pady=(0, 8)
-        )
-        ttk.Label(form, text="Program").grid(row=3, column=0, sticky="w", pady=(0, 8))
-        ttk.Combobox(
-            form,
-            textvariable=self._program_var,
-            values=("proficy", "cimplicity", "both"),
-            state="readonly",
-            width=18,
-        ).grid(row=3, column=1, sticky="w", pady=(0, 8))
-        ttk.Checkbutton(
+        for row, (label, var) in enumerate(zip(labels, vars_)):
+            ctk.CTkLabel(form, text=label, font=FONT_BODY).grid(
+                row=row, column=0, sticky="w", pady=(0, 8)
+            )
+            if label == "Program":
+                ctk.CTkComboBox(
+                    form,
+                    variable=var,
+                    values=("proficy", "cimplicity", "both"),
+                    state="readonly",
+                    width=180,
+                ).grid(row=row, column=1, sticky="w", pady=(0, 8))
+            else:
+                ctk.CTkEntry(form, textvariable=var, width=400).grid(
+                    row=row, column=1, sticky="ew", pady=(0, 8)
+                )
+        ctk.CTkCheckBox(
             form,
             text="Queue Proficy export row (when Proficy is selected)",
             variable=self._queue_var,
+            font=FONT_BODY,
         ).grid(row=4, column=1, sticky="w", pady=(2, 0))
         form.columnconfigure(1, weight=1)
 
-        vessel_frame = ttk.LabelFrame(self._window, text="Vessels", padding=10)
+        vessel_frame = ctk.CTkFrame(self._window)
         vessel_frame.pack(fill="both", expand=True, padx=14, pady=(0, 12))
-        self._vessel_list = tk.Listbox(vessel_frame, selectmode="extended", height=12)
+        ctk.CTkLabel(
+            vessel_frame, text="Vessels", font=(FONT_BODY[0], FONT_BODY[1], "bold")
+        ).pack(anchor="w", padx=10, pady=(10, 6))
+
+        list_row = ctk.CTkFrame(vessel_frame, fg_color="transparent")
+        list_row.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._vessel_list = tk.Listbox(list_row, selectmode="extended", height=12)
         self._vessel_list.pack(fill="both", expand=True, side="left")
         for vessel in vessels:
             self._vessel_list.insert("end", vessel)
 
-        button_column = ttk.Frame(vessel_frame)
+        button_column = ctk.CTkFrame(list_row, fg_color="transparent")
         button_column.pack(side="left", fill="y", padx=(8, 0))
-        ttk.Button(button_column, text="Add Vessel", command=self._add_vessel).pack(
-            fill="x", pady=(0, 6)
-        )
-        ttk.Button(button_column, text="Remove Selected", command=self._remove_selected).pack(
-            fill="x"
-        )
+        ctk.CTkButton(
+            button_column, text="Add Vessel", command=self._add_vessel, **button_neutral_kwargs()
+        ).pack(fill="x", pady=(0, 6))
+        ctk.CTkButton(
+            button_column,
+            text="Remove Selected",
+            command=self._remove_selected,
+            **button_neutral_kwargs(),
+        ).pack(fill="x")
 
-        actions = ttk.Frame(self._window, padding=(14, 0, 14, 14))
-        actions.pack(fill="x")
-        ttk.Button(actions, text="Cancel", command=self._cancel).pack(side="right")
-        ttk.Button(actions, text="Create", command=self._save).pack(side="right", padx=(0, 8))
+        actions = ctk.CTkFrame(self._window, fg_color="transparent")
+        actions.pack(fill="x", padx=14, pady=(0, 14))
+        ctk.CTkButton(actions, text="Cancel", command=self._cancel, **button_neutral_kwargs()).pack(
+            side="right"
+        )
+        ctk.CTkButton(
+            actions, text="Create", command=self._save, **button_accent_kwargs()
+        ).pack(side="right", padx=(0, 8))
 
     def _add_vessel(self) -> None:
         vessel = simpledialog.askstring("Add Vessel", "Vessel name:", parent=self._window)
