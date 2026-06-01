@@ -3,13 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-
-import customtkinter as ctk
-
-from ui.ctk_theme import BRAND_TEAL, FONT_BODY, button_accent_kwargs, button_neutral_kwargs
-from ui.ctk_tree import create_data_treeview
-
-_WARN_DARK = "#c9a227"
+from tkinter import ttk
 
 
 class AmbiguousAddressResolverDialog:
@@ -31,10 +25,10 @@ class AmbiguousAddressResolverDialog:
         "skip": "Skip",
     }
 
-    def __init__(self, parent: ctk.CTk) -> None:
+    def __init__(self, parent: tk.Tk) -> None:
         self._result: list[dict[str, str]] | None = None
         self._decision_var = tk.StringVar(value="pending")
-        self._window = ctk.CTkToplevel(parent)
+        self._window = tk.Toplevel(parent)
         self._window.title("Ambiguous Address Resolver")
         self._window.geometry("1560x780")
         self._window.transient(parent)
@@ -77,36 +71,31 @@ class AmbiguousAddressResolverDialog:
             self._window.destroy()
 
     def _build_ui(self) -> None:
-        wrapper = ctk.CTkFrame(self._window, fg_color="transparent")
-        wrapper.pack(fill="both", expand=True, padx=14, pady=14)
+        wrapper = ttk.Frame(self._window, padding=14)
+        wrapper.pack(fill="both", expand=True)
 
-        ctk.CTkLabel(
+        ttk.Label(
             wrapper,
             textvariable=self._header_var,
-            font=(FONT_BODY[0], FONT_BODY[1], "bold"),
-            anchor="w",
             justify="left",
+            font=("Helvetica", 12, "bold"),
         ).pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(
+        ttk.Label(
             wrapper,
             text=(
                 "Recommendation: use 'Merge Duplicates Then Align' when candidate tags are "
                 "duplicate aliases for the same IO address."
             ),
-            text_color=BRAND_TEAL,
-            font=FONT_BODY,
-            anchor="w",
-            justify="left",
+            foreground="#0f4c81",
         ).pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(
+        ttk.Label(
             wrapper,
             textvariable=self._status_var,
-            text_color=_WARN_DARK,
-            font=(FONT_BODY[0], FONT_BODY[1], "bold"),
-            anchor="w",
+            foreground="#8a5b00",
+            font=("Helvetica", 11, "bold"),
         ).pack(fill="x", pady=(0, 10))
 
-        table_frame = ctk.CTkFrame(wrapper)
+        table_frame = ttk.Frame(wrapper)
         table_frame.pack(fill="both", expand=True)
         columns = (
             "action",
@@ -115,6 +104,12 @@ class AmbiguousAddressResolverDialog:
             "address",
             "selected_tag",
             "candidate_tags",
+        )
+        self._tree = ttk.Treeview(
+            table_frame,
+            columns=columns,
+            show="headings",
+            selectmode="extended",
         )
         headings = {
             "action": "Resolution",
@@ -132,54 +127,48 @@ class AmbiguousAddressResolverDialog:
             "selected_tag": 220,
             "candidate_tags": 420,
         }
-        self._tree, _scroll = create_data_treeview(
-            table_frame, columns, headings, widths, height=18
-        )
-        self._tree.configure(selectmode="extended")
+        for col in columns:
+            self._tree.heading(col, text=headings[col])
+            self._tree.column(col, width=widths[col], anchor="w")
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=y_scroll.set)
+        self._tree.pack(side="left", fill="both", expand=True)
+        y_scroll.pack(side="left", fill="y")
 
-        controls = ctk.CTkFrame(wrapper, fg_color="transparent")
-        controls.pack(fill="x", pady=(10, 0))
-        ctk.CTkLabel(controls, text="Set selected rows to action:", font=FONT_BODY).pack(
-            side="left"
-        )
-        ctk.CTkComboBox(
+        controls = ttk.Frame(wrapper, padding=(0, 10, 0, 0))
+        controls.pack(fill="x")
+        ttk.Label(controls, text="Set selected rows to action:").pack(side="left")
+        ttk.Combobox(
             controls,
-            variable=self._selected_action_var,
+            textvariable=self._selected_action_var,
             state="readonly",
             values=[self.ACTION_LABELS[action] for action in self.ACTIONS],
-            width=280,
+            width=32,
         ).pack(side="left", padx=(8, 10))
-        ctk.CTkLabel(controls, text="with survivor tag:", font=FONT_BODY).pack(side="left")
-        ctk.CTkEntry(controls, textvariable=self._selected_tag_var, width=220).pack(
+        ttk.Label(controls, text="with survivor tag:").pack(side="left")
+        ttk.Entry(controls, textvariable=self._selected_tag_var, width=26).pack(
             side="left", padx=(8, 10)
         )
-        ctk.CTkButton(
-            controls,
-            text="Apply To Selected",
-            command=self._apply_selected,
-            **button_neutral_kwargs(),
-        ).pack(side="left", padx=(0, 16))
-        ctk.CTkButton(
+        ttk.Button(controls, text="Apply To Selected", command=self._apply_selected).pack(
+            side="left", padx=(0, 16)
+        )
+        ttk.Button(
             controls,
             text="Merge + Align All",
             command=lambda: self._apply_all("merge_then_align"),
-            **button_neutral_kwargs(),
         ).pack(side="left", padx=4)
-        ctk.CTkButton(
-            controls,
-            text="Skip All",
-            command=lambda: self._apply_all("skip"),
-            **button_neutral_kwargs(),
+        ttk.Button(
+            controls, text="Skip All", command=lambda: self._apply_all("skip")
         ).pack(side="left", padx=4)
 
-        actions = ctk.CTkFrame(wrapper, fg_color="transparent")
-        actions.pack(fill="x", pady=(10, 0))
-        ctk.CTkButton(
-            actions, text="Cancel Import", command=self._on_window_close, **button_neutral_kwargs()
-        ).pack(side="right")
-        ctk.CTkButton(
-            actions, text="Apply Decisions", command=self._submit, **button_accent_kwargs()
-        ).pack(side="right", padx=(0, 8))
+        actions = ttk.Frame(wrapper, padding=(0, 10, 0, 0))
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Cancel Import", command=self._on_window_close).pack(
+            side="right"
+        )
+        ttk.Button(actions, text="Apply Decisions", command=self._submit).pack(
+            side="right", padx=(0, 8)
+        )
 
         self._tree.bind("<<TreeviewSelect>>", self._sync_editor_with_selection)
 
@@ -261,3 +250,4 @@ class AmbiguousAddressResolverDialog:
     def _on_window_close(self) -> None:
         self._result = None
         self._decision_var.set("done")
+

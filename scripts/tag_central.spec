@@ -4,8 +4,6 @@
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
-
 ROOT = Path(SPEC).resolve().parent.parent
 
 block_cipher = None
@@ -34,7 +32,6 @@ hiddenimports = _project_hiddenimports() + [
     "pandas.plotting",
     "openpyxl",
     "docx",
-    "customtkinter",
     "pandas._libs.tslibs.timedeltas",
     "pandas._libs.tslibs.nattype",
     "pandas._libs.tslibs.np_datetime",
@@ -58,8 +55,6 @@ excludes = [
 datas = [
     (str(ROOT / "assets"), "assets"),
     (str(ROOT / "alias_rules.json"), "."),
-    (str(ROOT / "ui" / "tag_central_theme.json"), "ui"),
-    *collect_data_files("customtkinter"),
 ]
 
 if sys.platform == "darwin":

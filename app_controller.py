@@ -9,8 +9,6 @@ import tkinter as tk
 import re
 from tkinter import filedialog, messagebox, simpledialog
 
-import customtkinter as ctk
-
 from app_config import (
     ASYNC_TABLE_THRESHOLD,
     BACKUP_FOLDER,
@@ -87,7 +85,7 @@ class AppController:
 
     def __init__(
         self,
-        root: ctk.CTk,
+        root: tk.Tk,
         *,
         startup_status: Callable[[str], None] | None = None,
         skip_initial_refresh: bool = False,
@@ -1121,8 +1119,8 @@ class AppController:
         vessels = sorted(
             {vessel for record in self._tags.values() for vessel in record.vessels}
         )
-        self._window.vessel_combo.configure(values=["ALL", *vessels])
-        if self._window.vessel_var.get() not in self._window.vessel_combo.cget("values"):
+        self._window.vessel_combo["values"] = ["ALL", *vessels]
+        if self._window.vessel_var.get() not in self._window.vessel_combo["values"]:
             self._window.vessel_var.set("ALL")
             self._active_vessel_filter = None
 

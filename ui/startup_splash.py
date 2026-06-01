@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import tkinter as tk
-
-import customtkinter as ctk
+from tkinter import ttk
 
 from app_identity import APP_NAME, APP_VERSION, icon_png_path
-from ui.ctk_theme import BRAND_TEAL, FONT_BODY, FONT_SUBTITLE, FONT_TITLE
 
 
 class StartupSplash:
@@ -16,9 +14,9 @@ class StartupSplash:
     WIDTH = 420
     HEIGHT = 260
 
-    def __init__(self, master: ctk.CTk) -> None:
+    def __init__(self, master: tk.Tk) -> None:
         self._master = master
-        self._window = ctk.CTkToplevel(master)
+        self._window = tk.Toplevel(master)
         self._window.title(APP_NAME)
         self._window.overrideredirect(True)
         self._window.attributes("-topmost", True)
@@ -30,34 +28,32 @@ class StartupSplash:
         self._window.update()
 
     def _build_ui(self) -> None:
-        frame = ctk.CTkFrame(self._window)
-        frame.pack(fill="both", expand=True, padx=24, pady=24)
+        frame = ttk.Frame(self._window, padding=24)
+        frame.pack(fill="both", expand=True)
 
         png_path = icon_png_path()
         if png_path.exists():
             try:
                 self._icon_image = tk.PhotoImage(file=str(png_path))
-                tk.Label(frame, image=self._icon_image, bg="#2b2b2b").pack(
-                    pady=(0, 12)
-                )
+                ttk.Label(frame, image=self._icon_image).pack(pady=(0, 12))
             except tk.TclError:
                 pass
 
         title = APP_NAME
         if APP_VERSION:
             title = f"{APP_NAME} {APP_VERSION}"
-        ctk.CTkLabel(frame, text=title, font=FONT_TITLE).pack()
-        ctk.CTkLabel(
+        ttk.Label(frame, text=title, font=("Helvetica", 18, "bold")).pack()
+        ttk.Label(
             frame,
             text="Opening application…",
-            font=FONT_SUBTITLE,
+            font=("Helvetica", 11),
         ).pack(pady=(4, 16))
-        ctk.CTkLabel(frame, textvariable=self._status_var, font=FONT_BODY).pack(
+        ttk.Label(frame, textvariable=self._status_var, font=("Helvetica", 10)).pack(
             pady=(0, 10)
         )
-        progress = ctk.CTkProgressBar(frame, mode="indeterminate", width=320)
+        progress = ttk.Progressbar(frame, mode="indeterminate", length=320)
         progress.pack(fill="x")
-        progress.start()
+        progress.start(10)
 
     def _center_on_screen(self) -> None:
         self._window.update_idletasks()
@@ -68,11 +64,13 @@ class StartupSplash:
         self._window.geometry(f"{self.WIDTH}x{self.HEIGHT}+{x}+{y}")
 
     def set_status(self, message: str) -> None:
+        """Updates status line and flushes pending UI events."""
         self._status_var.set(message)
         self._window.update_idletasks()
         self._window.update()
 
     def close(self) -> None:
+        """Destroys the splash window."""
         try:
             if self._window.winfo_exists():
                 self._window.destroy()

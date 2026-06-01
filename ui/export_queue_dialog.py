@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, ttk
 from typing import Callable
 
-import customtkinter as ctk
-
 from services.export_queue_service import ExportQueueService, changed_field_labels
-from ui.ctk_theme import FONT_BODY, button_neutral_kwargs
-from ui.ctk_tree import create_data_treeview
 
 
 class ExportQueueDialog:
@@ -18,66 +14,53 @@ class ExportQueueDialog:
 
     def __init__(
         self,
-        parent: ctk.CTk,
+        parent: tk.Tk,
         queue: ExportQueueService,
         on_change: Callable[[], None] | None = None,
     ) -> None:
         self._queue = queue
         self._on_change = on_change
-        self._window = ctk.CTkToplevel(parent)
+        self._window = tk.Toplevel(parent)
         self._window.title("Export Queue")
         self._window.geometry("1100x600")
         self._window.transient(parent)
 
-        body = ctk.CTkFrame(self._window, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=14, pady=14)
-
-        ctk.CTkLabel(
-            body,
+        ttk.Label(
+            self._window,
             text="Review pending Proficy export rows before running Export Changes.",
-            font=FONT_BODY,
-            anchor="w",
-        ).pack(anchor="w", pady=(0, 8))
+            font=("Helvetica", 11),
+        ).pack(anchor="w", padx=14, pady=(12, 8))
 
-        table_frame = ctk.CTkFrame(body)
-        table_frame.pack(fill="both", expand=True, pady=(0, 10))
-        self._tree, _scroll = create_data_treeview(
-            table_frame,
-            ("vessel", "tag", "changed", "description", "address"),
-            {
-                "vessel": "Vessel",
-                "tag": "Tag",
-                "changed": "Changed Fields",
-                "description": "Description",
-                "address": "Address",
-            },
-            {
-                "vessel": 110,
-                "tag": 160,
-                "changed": 140,
-                "description": 280,
-                "address": 120,
-            },
-            height=16,
+        table_frame = ttk.Frame(self._window, padding=(14, 0, 14, 10))
+        table_frame.pack(fill="both", expand=True)
+        columns = ("vessel", "tag", "changed", "description", "address")
+        self._tree = ttk.Treeview(
+            table_frame, columns=columns, show="headings", selectmode="browse"
         )
-        self._tree.configure(selectmode="browse")
+        for column, label, width in (
+            ("vessel", "Vessel", 110),
+            ("tag", "Tag", 160),
+            ("changed", "Changed Fields", 140),
+            ("description", "Description", 280),
+            ("address", "Address", 120),
+        ):
+            self._tree.heading(column, text=label)
+            self._tree.column(column, width=width, anchor="w")
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=y_scroll.set)
+        self._tree.pack(side="left", fill="both", expand=True)
+        y_scroll.pack(side="left", fill="y")
 
-        buttons = ctk.CTkFrame(body, fg_color="transparent")
+        buttons = ttk.Frame(self._window, padding=(14, 0, 14, 14))
         buttons.pack(fill="x")
-        ctk.CTkButton(
-            buttons, text="Edit Row", command=self._edit_row, **button_neutral_kwargs()
-        ).pack(side="left")
-        ctk.CTkButton(
-            buttons, text="Remove Row", command=self._remove_row, **button_neutral_kwargs()
-        ).pack(side="left", padx=(8, 0))
-        ctk.CTkButton(
-            buttons, text="Close", command=self._window.destroy, **button_neutral_kwargs()
-        ).pack(side="right")
+        ttk.Button(buttons, text="Edit Row", command=self._edit_row).pack(side="left")
+        ttk.Button(buttons, text="Remove Row", command=self._remove_row).pack(
+            side="left", padx=(8, 0)
+        )
+        ttk.Button(buttons, text="Close", command=self._window.destroy).pack(side="right")
 
         self._status_var = tk.StringVar()
-        ctk.CTkLabel(buttons, textvariable=self._status_var, font=FONT_BODY).pack(
-            side="right", padx=(0, 16)
-        )
+        ttk.Label(buttons, textvariable=self._status_var).pack(side="right", padx=(0, 16))
         self._render()
 
     def _render(self) -> None:

@@ -2,36 +2,29 @@
 
 from __future__ import annotations
 
-import customtkinter as ctk
+import tkinter as tk
+from tkinter import ttk
 
 from app_config import SYNC_STATUS_LABELS
 from models.tag_record import TagRecord
 from services.address_normalizer import normalize_address
 from services.cross_program_sync_service import normalize_description
-from ui.ctk_theme import FONT_BODY, button_neutral_kwargs
-from ui.ctk_tree import create_data_treeview
-
-_DIFF_DARK = "#4a3828"
 
 
 class TagDiffDialog:
     """Shows canonical, Proficy, and Cimplicity values for one tag."""
 
-    def __init__(self, parent: ctk.CTk, record: TagRecord) -> None:
-        self._window = ctk.CTkToplevel(parent)
+    def __init__(self, parent: tk.Tk, record: TagRecord) -> None:
+        self._window = tk.Toplevel(parent)
         self._window.title(f"Tag Diff — {record.tag_name}")
         self._window.geometry("900x360")
         self._window.transient(parent)
 
-        body = ctk.CTkFrame(self._window, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=14, pady=14)
-
-        ctk.CTkLabel(
-            body,
+        ttk.Label(
+            self._window,
             text="Highlighted rows differ between columns.",
-            font=FONT_BODY,
-            anchor="w",
-        ).pack(anchor="w", pady=(0, 8))
+            font=("Helvetica", 11),
+        ).pack(anchor="w", padx=14, pady=(12, 8))
 
         proficy_name = (record.proficy_name or record.tag_name).strip().upper()
         proficy_desc = str(record.proficy_row_data.get("Description", record.description))
@@ -39,16 +32,12 @@ class TagDiffDialog:
             TagRecord._address_from_row(record.proficy_row_data)
         ) or record.linked_address
         cim_name = (record.cimplicity_pt_id or "").strip().upper()
-        cim_desc = (
-            normalize_description(record.cimplicity_row_data.get("DESC", ""))
-            if record.cimplicity_row_data
-            else ""
-        )
-        cim_addr = (
-            normalize_address(record.cimplicity_row_data.get("ADDR", ""))
-            if record.cimplicity_row_data
-            else ""
-        )
+        cim_desc = normalize_description(
+            record.cimplicity_row_data.get("DESC", "")
+        ) if record.cimplicity_row_data else ""
+        cim_addr = normalize_address(
+            record.cimplicity_row_data.get("ADDR", "")
+        ) if record.cimplicity_row_data else ""
 
         sync_label = SYNC_STATUS_LABELS.get(
             record.sync_status, record.sync_status.replace("_", " ").title()
@@ -61,21 +50,20 @@ class TagDiffDialog:
             ("Sync", sync_label, "—", "—"),
         ]
 
-        table_frame = ctk.CTkFrame(body)
-        table_frame.pack(fill="both", expand=True, pady=(0, 10))
-        tree, _scroll = create_data_treeview(
-            table_frame,
-            ("field", "canonical", "proficy", "cimplicity"),
-            {
-                "field": "Field",
-                "canonical": "Canonical",
-                "proficy": "Proficy",
-                "cimplicity": "Cimplicity",
-            },
-            {"field": 120, "canonical": 220, "proficy": 220, "cimplicity": 220},
-            height=6,
-        )
-        tree.tag_configure("diff", background=_DIFF_DARK)
+        table = ttk.Frame(self._window, padding=(14, 0, 14, 10))
+        table.pack(fill="both", expand=True)
+        columns = ("field", "canonical", "proficy", "cimplicity")
+        tree = ttk.Treeview(table, columns=columns, show="headings", height=6)
+        for column, label, width in (
+            ("field", "Field", 120),
+            ("canonical", "Canonical", 220),
+            ("proficy", "Proficy", 220),
+            ("cimplicity", "Cimplicity", 220),
+        ):
+            tree.heading(column, text=label)
+            tree.column(column, width=width, anchor="w")
+        tree.tag_configure("diff", background="#fff3e0")
+        tree.pack(fill="both", expand=True)
 
         for field_name, canonical, proficy, cimplicity in rows:
             differs = len({canonical, proficy, cimplicity} - {"—"}) > 1
@@ -87,6 +75,6 @@ class TagDiffDialog:
                 tags=tags,
             )
 
-        ctk.CTkButton(
-            body, text="Close", command=self._window.destroy, **button_neutral_kwargs()
-        ).pack(anchor="e")
+        ttk.Button(self._window, text="Close", command=self._window.destroy).pack(
+            pady=(0, 14)
+        )

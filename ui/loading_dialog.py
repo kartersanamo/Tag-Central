@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import tkinter as tk
-
-import customtkinter as ctk
-
-from ui.ctk_theme import FONT_BODY
+from tkinter import ttk
 
 
 class LoadingDialog:
     """Modal-ish loading dialog with status updates and spinner."""
 
-    def __init__(self, parent: ctk.CTk, title: str = "Working...") -> None:
+    def __init__(self, parent: tk.Tk, title: str = "Working...") -> None:
         self._parent = parent
-        self._window = ctk.CTkToplevel(parent)
+        self._window = tk.Toplevel(parent)
         self._window.title(title)
         self._window.geometry("460x140")
         self._window.resizable(False, False)
@@ -22,14 +19,14 @@ class LoadingDialog:
         self._window.protocol("WM_DELETE_WINDOW", lambda: None)
 
         self._status_var = tk.StringVar(value="Starting...")
-        frame = ctk.CTkFrame(self._window, fg_color="transparent")
-        frame.pack(fill="both", expand=True, padx=14, pady=14)
-        ctk.CTkLabel(frame, textvariable=self._status_var, font=FONT_BODY, anchor="w").pack(
+        frame = ttk.Frame(self._window, padding=14)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, textvariable=self._status_var, anchor="w").pack(
             fill="x", pady=(0, 10)
         )
-        self._progress = ctk.CTkProgressBar(frame, mode="indeterminate")
+        self._progress = ttk.Progressbar(frame, mode="indeterminate")
         self._progress.pack(fill="x")
-        self._progress.start()
+        self._progress.start(12)
 
     def show(self, status_text: str) -> None:
         self.update_status(status_text)
@@ -60,3 +57,4 @@ class LoadingDialog:
                 self._window.destroy()
         except tk.TclError:
             pass
+

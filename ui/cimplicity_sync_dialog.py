@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-
-import customtkinter as ctk
-
-from ui.ctk_theme import BRAND_TEAL, FONT_BODY, button_accent_kwargs, button_neutral_kwargs
-from ui.ctk_tree import create_data_treeview
+from tkinter import ttk
 
 
 class CimplicitySyncDialog:
@@ -20,10 +16,10 @@ class CimplicitySyncDialog:
         "skip",
     )
 
-    def __init__(self, parent: ctk.CTk) -> None:
+    def __init__(self, parent: tk.Tk) -> None:
         self._result: list[dict[str, str]] | None = None
         self._decision_var = tk.StringVar(value="pending")
-        self._window = ctk.CTkToplevel(parent)
+        self._window = tk.Toplevel(parent)
         self._window.title("Cimplicity Sync Resolver")
         self._window.geometry("1400x720")
         self._window.transient(parent)
@@ -61,19 +57,18 @@ class CimplicitySyncDialog:
             self._window.destroy()
 
     def _build_ui(self) -> None:
-        ctk.CTkLabel(
-            self._window, textvariable=self._header_var, font=FONT_BODY, anchor="w", justify="left"
-        ).pack(fill="x", padx=16, pady=(14, 10))
-        ctk.CTkLabel(
+        ttk.Label(self._window, textvariable=self._header_var, justify="left").pack(
+            fill="x", padx=16, pady=(14, 10)
+        )
+        ttk.Label(
             self._window,
             textvariable=self._status_var,
-            text_color=BRAND_TEAL,
-            font=(FONT_BODY[0], FONT_BODY[1], "bold"),
-            anchor="w",
+            foreground="#0f4c81",
+            font=("Helvetica", 11, "bold"),
         ).pack(fill="x", padx=16, pady=(0, 8))
 
-        table_frame = ctk.CTkFrame(self._window)
-        table_frame.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+        table_frame = ttk.Frame(self._window, padding=(14, 0, 14, 10))
+        table_frame.pack(fill="both", expand=True)
         columns = (
             "action",
             "pt_id",
@@ -82,6 +77,9 @@ class CimplicitySyncDialog:
             "existing_tag",
             "existing_desc",
             "issue",
+        )
+        self._tree = ttk.Treeview(
+            table_frame, columns=columns, show="headings", selectmode="extended"
         )
         headings = {
             "action": "Action",
@@ -101,45 +99,41 @@ class CimplicitySyncDialog:
             "existing_desc": 240,
             "issue": 180,
         }
-        self._tree, _scroll = create_data_treeview(
-            table_frame, columns, headings, widths, height=18
-        )
-        self._tree.configure(selectmode="extended")
+        for column in columns:
+            self._tree.heading(column, text=headings[column])
+            self._tree.column(column, width=widths[column], anchor="w")
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=y_scroll.set)
+        self._tree.pack(side="left", fill="both", expand=True)
+        y_scroll.pack(side="left", fill="y")
 
-        button_bar = ctk.CTkFrame(self._window, fg_color="transparent")
-        button_bar.pack(fill="x", padx=14, pady=(0, 14))
-        ctk.CTkLabel(button_bar, text="Set selected rows to:", font=FONT_BODY).pack(side="left")
-        ctk.CTkComboBox(
+        button_bar = ttk.Frame(self._window, padding=(14, 0, 14, 14))
+        button_bar.pack(fill="x")
+        ttk.Label(button_bar, text="Set selected rows to:").pack(side="left")
+        ttk.Combobox(
             button_bar,
-            variable=self._selected_action_var,
+            textvariable=self._selected_action_var,
             state="readonly",
             values=self.ACTIONS,
-            width=200,
+            width=24,
         ).pack(side="left", padx=(8, 8))
-        ctk.CTkButton(
-            button_bar,
-            text="Apply To Selected",
-            command=self._apply_selected,
-            **button_neutral_kwargs(),
-        ).pack(side="left", padx=(0, 16))
-        ctk.CTkButton(
+        ttk.Button(button_bar, text="Apply To Selected", command=self._apply_selected).pack(
+            side="left", padx=(0, 16)
+        )
+        ttk.Button(
             button_bar,
             text="Align Proficy For All",
             command=lambda: self._apply_all("align_proficy"),
-            **button_neutral_kwargs(),
         ).pack(side="left", padx=4)
-        ctk.CTkButton(
-            button_bar,
-            text="Skip All",
-            command=lambda: self._apply_all("skip"),
-            **button_neutral_kwargs(),
+        ttk.Button(
+            button_bar, text="Skip All", command=lambda: self._apply_all("skip")
         ).pack(side="left", padx=4)
-        ctk.CTkButton(
-            button_bar, text="Cancel Import", command=self._on_window_close, **button_neutral_kwargs()
-        ).pack(side="right")
-        ctk.CTkButton(
-            button_bar, text="Apply Decisions", command=self._submit, **button_accent_kwargs()
-        ).pack(side="right", padx=(0, 8))
+        ttk.Button(button_bar, text="Cancel Import", command=self._on_window_close).pack(
+            side="right"
+        )
+        ttk.Button(button_bar, text="Apply Decisions", command=self._submit).pack(
+            side="right", padx=(0, 8)
+        )
 
     def _render_rows(self) -> None:
         self._tree.delete(*self._tree.get_children())

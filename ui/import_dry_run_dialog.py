@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import customtkinter as ctk
-
-from ui.ctk_dialog import CtkModalDialog
-from ui.ctk_theme import FONT_SUBTITLE, button_accent_kwargs, button_neutral_kwargs
+import tkinter as tk
+from tkinter import scrolledtext, ttk
 
 
 class ImportDryRunDialog:
@@ -13,28 +11,33 @@ class ImportDryRunDialog:
 
     def __init__(
         self,
-        parent: ctk.CTk,
+        parent: tk.Tk,
         title: str,
         summary_lines: list[str],
     ) -> None:
         self._result = False
-        self._dialog = CtkModalDialog(parent, title, width=620, height=480)
-        self._window = self._dialog
+        self._window = tk.Toplevel(parent)
+        self._window.title(title)
+        self._window.geometry("620x480")
+        self._window.transient(parent)
+        self._window.grab_set()
 
-        ctk.CTkLabel(
-            self._dialog.body,
+        ttk.Label(
+            self._window,
             text="Review the import summary, then apply or cancel.",
-            font=FONT_SUBTITLE,
-            anchor="w",
-        ).pack(anchor="w", pady=(0, 8))
+            font=("Helvetica", 11),
+        ).pack(anchor="w", padx=14, pady=(12, 8))
 
-        self._dialog.add_readonly_text("\n".join(summary_lines), height=320)
-        self._dialog.add_footer_button(
-            "Apply Import", self._apply, **button_accent_kwargs()
-        )
-        self._dialog.add_footer_button(
-            "Cancel", self._cancel, side="right", **button_neutral_kwargs()
-        )
+        text = scrolledtext.ScrolledText(self._window, height=20, wrap="word")
+        text.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+        text.insert("1.0", "\n".join(summary_lines))
+        text.configure(state="disabled")
+
+        buttons = ttk.Frame(self._window, padding=(14, 0, 14, 14))
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="Apply Import", command=self._apply).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=self._cancel).pack(side="right")
+
         self._window.protocol("WM_DELETE_WINDOW", self._cancel)
 
     def _apply(self) -> None:

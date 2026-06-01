@@ -13,8 +13,6 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Tag Central uses **CustomTkinter** for a dark, modern UI. The main tag table remains a high-performance `ttk.Treeview` styled to match the dark theme.
-
 ## Building installers
 
 Branded builds bundle the **Tag Center** icon, version, and app metadata. Data is stored outside the app bundle:
@@ -164,21 +162,6 @@ myenv/bin/python run_tests.py
 ```
 
 Includes unit tests and small golden fixtures under `tests/fixtures/`.
-
-## Manual smoke checklist (UI)
-
-After UI changes or before a release build:
-
-1. Launch app — splash appears, main window opens in dark theme
-2. Import Proficy — dry-run dialog, apply, table refreshes
-3. Sort table by column heading; filter by vessel, program, search
-4. Right-click context menu — edit, copy, tag diff
-5. Find & Replace — toggle bar, preview matches, apply/clear
-6. Export queue review; export Proficy changes; validation dialog
-7. Documentation dialog — generate HTML/Excel output
-8. Backups dialog — list, preview, create backup
-9. Cimplicity review / sync / ambiguous resolver dialogs (if test data available)
-10. Rebuild with `./build-mac.sh` or `build-windows.ps1` and confirm packaged app renders theme correctly
 
 ## Project layout
 

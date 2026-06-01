@@ -1,4 +1,3 @@
 pandas
 openpyxl
 python-docx
-customtkinter>=5.2.0

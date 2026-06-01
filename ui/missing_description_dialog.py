@@ -3,16 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-
-import customtkinter as ctk
-
-from ui.ctk_theme import (
-    FONT_BODY,
-    FONT_TITLE,
-    button_accent_kwargs,
-    button_neutral_kwargs,
-)
-from ui.ctk_tree import create_data_treeview
+from tkinter import ttk
 
 
 class MissingDescriptionDialog:
@@ -20,14 +11,14 @@ class MissingDescriptionDialog:
 
     def __init__(
         self,
-        parent: ctk.CTk,
+        parent: tk.Tk,
         candidates: list[dict[str, object]],
         *,
         title: str = "Review Missing Descriptions",
     ) -> None:
         self._candidates = candidates
         self._result: dict[int, str] | None = None
-        self._window = ctk.CTkToplevel(parent)
+        self._window = tk.Toplevel(parent)
         self._window.title(title)
         self._window.geometry("980x620")
         self._window.transient(parent)
@@ -38,39 +29,41 @@ class MissingDescriptionDialog:
         self._build_ui()
 
     def show(self) -> dict[int, str] | None:
+        """Shows dialog and returns edited descriptions by row index."""
         self._window.wait_window()
         return self._result
 
     def _build_ui(self) -> None:
-        header = ctk.CTkFrame(self._window, fg_color="transparent")
-        header.pack(fill="x", padx=14, pady=14)
-        ctk.CTkLabel(
+        header = ttk.Frame(self._window, padding=14)
+        header.pack(fill="x")
+        ttk.Label(
             header,
             text="Some rows are missing descriptions.",
-            font=FONT_TITLE,
-            anchor="w",
+            font=("Helvetica", 14, "bold"),
         ).pack(anchor="w")
-        ctk.CTkLabel(
+        ttk.Label(
             header,
             text="Review suggested descriptions below, edit as needed, then continue.",
-            font=FONT_BODY,
-            anchor="w",
         ).pack(anchor="w", pady=(4, 0))
 
-        table_frame = ctk.CTkFrame(self._window)
-        table_frame.pack(fill="both", expand=True, padx=14, pady=(0, 10))
-        self._tree, _scroll = create_data_treeview(
+        table_frame = ttk.Frame(self._window, padding=(14, 0, 14, 10))
+        table_frame.pack(fill="both", expand=True)
+        self._tree = ttk.Treeview(
             table_frame,
-            ("tag", "suggested", "final"),
-            {
-                "tag": "Tag",
-                "suggested": "Suggested Description",
-                "final": "Final Description",
-            },
-            {"tag": 250, "suggested": 320, "final": 340},
-            height=14,
+            columns=("tag", "suggested", "final"),
+            show="headings",
+            selectmode="browse",
         )
-        self._tree.configure(selectmode="browse")
+        self._tree.heading("tag", text="Tag")
+        self._tree.heading("suggested", text="Suggested Description")
+        self._tree.heading("final", text="Final Description")
+        self._tree.column("tag", width=250, anchor="w")
+        self._tree.column("suggested", width=320, anchor="w")
+        self._tree.column("final", width=340, anchor="w")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=scrollbar.set)
+        self._tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="left", fill="y")
 
         for candidate in self._candidates:
             row_index = int(candidate["row_index"])
@@ -83,29 +76,19 @@ class MissingDescriptionDialog:
                 values=(tag, suggested, suggested),
             )
 
-        editor = ctk.CTkFrame(self._window, fg_color="transparent")
-        editor.pack(fill="x", padx=14, pady=(0, 12))
-        ctk.CTkLabel(editor, text="Edit selected final description:", font=FONT_BODY).pack(
-            side="left"
-        )
-        ctk.CTkEntry(editor, textvariable=self._description_var, width=520).pack(
-            side="left", padx=(10, 8), fill="x", expand=True
-        )
-        ctk.CTkButton(
-            editor, text="Apply", command=self._apply_selected_edit, **button_accent_kwargs()
-        ).pack(side="left")
+        editor = ttk.Frame(self._window, padding=(14, 0, 14, 12))
+        editor.pack(fill="x")
+        ttk.Label(editor, text="Edit selected final description:").pack(side="left")
+        entry = ttk.Entry(editor, textvariable=self._description_var, width=78)
+        entry.pack(side="left", padx=(10, 8), fill="x", expand=True)
+        ttk.Button(editor, text="Apply", command=self._apply_selected_edit).pack(side="left")
 
-        actions = ctk.CTkFrame(self._window, fg_color="transparent")
-        actions.pack(fill="x", padx=14, pady=(0, 14))
-        ctk.CTkButton(
-            actions, text="Cancel Import", command=self._cancel, **button_neutral_kwargs()
-        ).pack(side="right")
-        ctk.CTkButton(
-            actions,
-            text="Continue Import",
-            command=self._continue_import,
-            **button_accent_kwargs(),
-        ).pack(side="right", padx=(0, 8))
+        actions = ttk.Frame(self._window, padding=(14, 0, 14, 14))
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Cancel Import", command=self._cancel).pack(side="right")
+        ttk.Button(actions, text="Continue Import", command=self._continue_import).pack(
+            side="right", padx=(0, 8)
+        )
 
         self._tree.bind("<<TreeviewSelect>>", self._sync_editor_with_selection)
         children = self._tree.get_children()
@@ -127,9 +110,7 @@ class MissingDescriptionDialog:
             return
         item_id = selection[0]
         values = self._tree.item(item_id, "values")
-        self._tree.item(
-            item_id, values=(values[0], values[1], self._description_var.get().strip())
-        )
+        self._tree.item(item_id, values=(values[0], values[1], self._description_var.get().strip()))
 
     def _continue_import(self) -> None:
         result: dict[int, str] = {}

@@ -3,36 +3,23 @@
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
 
-import customtkinter as ctk
-
-from app_config import PROGRAM_FILTER_VALUES
-from ui.ctk_theme import (
-    CORNER_RADIUS,
-    FONT_BODY,
-    FONT_SMALL,
-    FONT_SUBTITLE,
-    FONT_TITLE,
-    TEXT_MUTED,
-    button_accent_kwargs,
-    button_neutral_kwargs,
-    button_warning_kwargs,
-)
-from ui.ctk_tree import create_tag_treeview
+from app_config import CONFLICT_GROUP_COLORS, DEFAULT_TABLE_COLUMNS, PROGRAM_FILTER_VALUES
 
 
 class MainWindow:
     """Builds and manages the primary UI widgets."""
 
-    def __init__(self, root: ctk.CTk) -> None:
+    def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.search_var = tk.StringVar()
         self.vessel_var = tk.StringVar(value="ALL")
         self.program_filter_var = tk.StringVar(value="ALL")
         self.view_conflicts_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="0 tags")
-        self.view_conflicts_check: ctk.CTkCheckBox | None = None
-        self.array_expand_toggle_button: ctk.CTkButton | None = None
+        self.view_conflicts_check: ttk.Checkbutton | None = None
+        self.array_expand_toggle_button: ttk.Button | None = None
         self.find_text_var = tk.StringVar()
         self.replace_text_var = tk.StringVar()
         self.find_scope_var = tk.StringVar(value="both")
@@ -41,225 +28,193 @@ class MainWindow:
             value="Enter find text to filter matching rows"
         )
 
-        self.import_button: ctk.CTkButton | None = None
-        self.import_proficy_button: ctk.CTkButton | None = None
-        self.import_cimplicity_button: ctk.CTkButton | None = None
-        self.cimplicity_review_button: ctk.CTkButton | None = None
-        self.cimplicity_tasks_button: ctk.CTkButton | None = None
-        self.program_filter_combo: ctk.CTkComboBox | None = None
-        self.backups_button: ctk.CTkButton | None = None
-        self.documentation_button: ctk.CTkButton | None = None
-        self.refresh_button: ctk.CTkButton | None = None
-        self.export_changes_button: ctk.CTkButton | None = None
-        self.review_export_queue_button: ctk.CTkButton | None = None
-        self.add_tag_button: ctk.CTkButton | None = None
-        self.find_replace_button: ctk.CTkButton | None = None
-        self.find_replace_apply_button: ctk.CTkButton | None = None
-        self.find_replace_delete_button: ctk.CTkButton | None = None
-        self.find_replace_clear_button: ctk.CTkButton | None = None
-        self.find_scope_combo: ctk.CTkComboBox | None = None
-        self.find_replace_bar: ctk.CTkFrame | None = None
-        self.filter_frame: ctk.CTkFrame | None = None
+        self.import_button: ttk.Button | None = None
+        self.import_proficy_button: ttk.Button | None = None
+        self.import_cimplicity_button: ttk.Button | None = None
+        self.cimplicity_review_button: ttk.Button | None = None
+        self.cimplicity_tasks_button: ttk.Button | None = None
+        self.program_filter_combo: ttk.Combobox | None = None
+        self.backups_button: ttk.Button | None = None
+        self.documentation_button: ttk.Button | None = None
+        self.refresh_button: ttk.Button | None = None
+        self.export_changes_button: ttk.Button | None = None
+        self.review_export_queue_button: ttk.Button | None = None
+        self.add_tag_button: ttk.Button | None = None
+        self.find_replace_button: ttk.Button | None = None
+        self.find_replace_apply_button: ttk.Button | None = None
+        self.find_replace_delete_button: ttk.Button | None = None
+        self.find_replace_clear_button: ttk.Button | None = None
+        self.find_scope_combo: ttk.Combobox | None = None
+        self.find_replace_bar: ttk.LabelFrame | None = None
         self._find_replace_visible = True
-        self.reset_filter_button: ctk.CTkButton | None = None
-        self.change_tag_button: ctk.CTkButton | None = None
-        self.vessel_combo: ctk.CTkComboBox | None = None
-        self.tree = None
+        self.reset_filter_button: ttk.Button | None = None
+        self.change_tag_button: ttk.Button | None = None
+        self.vessel_combo: ttk.Combobox | None = None
+        self.tree: ttk.Treeview | None = None
         self.context_menu: tk.Menu | None = None
 
-        self._neutral_btn = button_neutral_kwargs()
-        self._accent_btn = button_accent_kwargs()
-        self._warning_btn = button_warning_kwargs()
+        self._build_styles()
         self._build_layout()
 
-    def _build_layout(self) -> None:
-        main = ctk.CTkFrame(self.root, fg_color="transparent")
-        main.pack(fill="both", expand=True, padx=16, pady=16)
+    def _build_styles(self) -> None:
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("App.TFrame", background="#f5f7fa")
+        style.configure("Header.TLabel", font=("Helvetica", 17, "bold"))
+        style.configure("Subtitle.TLabel", foreground="#4b5563")
+        style.configure("ExportPending.TButton", foreground="#b00020")
 
-        ctk.CTkLabel(main, text="Tag Central", font=FONT_TITLE, anchor="w").pack(
-            anchor="w"
-        )
-        ctk.CTkLabel(
+    def _build_layout(self) -> None:
+        self.root.configure(bg="#f5f7fa")
+
+        main = ttk.Frame(self.root, style="App.TFrame", padding=16)
+        main.pack(fill="both", expand=True)
+
+        ttk.Label(main, text="Tag Central", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(
             main,
             text="Synchronize, review, and export vessel tag changes.",
-            font=FONT_SUBTITLE,
-            text_color=TEXT_MUTED,
-            anchor="w",
+            style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(2, 12))
 
-        toolbar_row1 = ctk.CTkFrame(main, fg_color="transparent")
-        toolbar_row1.pack(fill="x", pady=(0, 6))
-        toolbar_row2 = ctk.CTkFrame(main, fg_color="transparent")
-        toolbar_row2.pack(fill="x", pady=(0, 8))
+        control_bar = ttk.Frame(main)
+        control_bar.pack(fill="x")
 
-        self.import_proficy_button = ctk.CTkButton(
-            toolbar_row1, text="Import Proficy", **self._neutral_btn
-        )
-        self.import_cimplicity_button = ctk.CTkButton(
-            toolbar_row1, text="Import Cimplicity", **self._neutral_btn
-        )
+        self.import_proficy_button = ttk.Button(control_bar, text="Import Proficy")
+        self.import_cimplicity_button = ttk.Button(control_bar, text="Import Cimplicity")
         self.import_button = self.import_proficy_button
-        self.cimplicity_review_button = ctk.CTkButton(
-            toolbar_row1, text="Cimplicity Review (0)", **self._neutral_btn
+        self.cimplicity_review_button = ttk.Button(control_bar, text="Cimplicity Review (0)")
+        self.cimplicity_tasks_button = ttk.Button(control_bar, text="Cimplicity Tasks (0)")
+        self.backups_button = ttk.Button(control_bar, text="Backups", width=6)
+        self.documentation_button = ttk.Button(control_bar, text="Documentation")
+        self.refresh_button = ttk.Button(control_bar, text="Refresh", width=6)
+        self.add_tag_button = ttk.Button(control_bar, text="Add Tag", width=6)
+        self.find_replace_button = ttk.Button(control_bar, text="Find & Replace ▾")
+        self.export_changes_button = ttk.Button(control_bar, text="Export Proficy Changes (0)")
+        self.review_export_queue_button = ttk.Button(
+            control_bar, text="Review Export Queue"
         )
-        self.cimplicity_tasks_button = ctk.CTkButton(
-            toolbar_row1, text="Cimplicity Tasks (0)", **self._neutral_btn
-        )
-        self.refresh_button = ctk.CTkButton(
-            toolbar_row1, text="Refresh", width=90, **self._neutral_btn
-        )
+        self.change_tag_button = ttk.Button(control_bar, text="Edit Selected Tag")
 
-        self.import_proficy_button.pack(side="left", padx=(0, 6))
-        self.import_cimplicity_button.pack(side="left", padx=6)
-        self.refresh_button.pack(side="left", padx=6)
-        self.cimplicity_review_button.pack(side="left", padx=6)
-        self.cimplicity_tasks_button.pack(side="left", padx=6)
+        self.import_proficy_button.pack(side="left", padx=(0, 2))
+        self.import_cimplicity_button.pack(side="left", padx=2)
+        self.refresh_button.pack(side="left", padx=2)
+        self.cimplicity_tasks_button.pack(side="left", padx=2)
+        self.review_export_queue_button.pack(side="left", padx=2)
+        self.export_changes_button.pack(side="left", padx=2)
+        self.cimplicity_review_button.pack(side="left", padx=2)
+        self.backups_button.pack(side="left", padx=2)
+        self.documentation_button.pack(side="left", padx=2)
+        self.add_tag_button.pack(side="left", padx=2)
+        self.find_replace_button.pack(side="left", padx=2)
+        self.change_tag_button.pack(side="left", padx=2)
 
-        self.export_changes_button = ctk.CTkButton(
-            toolbar_row2, text="Export Proficy Changes (0)", **self._accent_btn
+        self.find_replace_bar = ttk.LabelFrame(main, text="Find & Replace", padding=10)
+        self.find_replace_bar.pack(fill="x", pady=(10, 8))
+        ttk.Label(self.find_replace_bar, text="Find").pack(side="left", padx=(0, 6))
+        ttk.Entry(self.find_replace_bar, textvariable=self.find_text_var, width=26).pack(
+            side="left", padx=(0, 6)
         )
-        self.review_export_queue_button = ctk.CTkButton(
-            toolbar_row2, text="Review Export Queue", **self._neutral_btn
+        ttk.Label(self.find_replace_bar, text="Replace").pack(side="left", padx=(0, 6))
+        ttk.Entry(self.find_replace_bar, textvariable=self.replace_text_var, width=26).pack(
+            side="left", padx=(0, 6)
         )
-        self.backups_button = ctk.CTkButton(
-            toolbar_row2, text="Backups", width=90, **self._neutral_btn
-        )
-        self.documentation_button = ctk.CTkButton(
-            toolbar_row2, text="Documentation", **self._neutral_btn
-        )
-        self.add_tag_button = ctk.CTkButton(
-            toolbar_row2, text="Add Tag", width=90, **self._neutral_btn
-        )
-        self.find_replace_button = ctk.CTkButton(
-            toolbar_row2, text="Find & Replace ▾", **self._neutral_btn
-        )
-        self.change_tag_button = ctk.CTkButton(
-            toolbar_row2, text="Edit Selected Tag", **self._neutral_btn
-        )
-
-        self.export_changes_button.pack(side="left", padx=(0, 6))
-        self.review_export_queue_button.pack(side="left", padx=6)
-        self.backups_button.pack(side="left", padx=6)
-        self.documentation_button.pack(side="left", padx=6)
-        self.add_tag_button.pack(side="left", padx=6)
-        self.find_replace_button.pack(side="left", padx=6)
-        self.change_tag_button.pack(side="left", padx=6)
-
-        self.find_replace_bar = ctk.CTkFrame(main, corner_radius=CORNER_RADIUS)
-        self.find_replace_bar.pack(fill="x", pady=(4, 8))
-        ctk.CTkLabel(
+        ttk.Label(self.find_replace_bar, text="Scope").pack(side="left", padx=(0, 6))
+        self.find_scope_combo = ttk.Combobox(
             self.find_replace_bar,
-            text="Find & Replace",
-            font=(FONT_BODY[0], FONT_BODY[1], "bold"),
-        ).pack(anchor="w", padx=12, pady=(10, 6))
-
-        find_row = ctk.CTkFrame(self.find_replace_bar, fg_color="transparent")
-        find_row.pack(fill="x", padx=12, pady=(0, 10))
-
-        ctk.CTkLabel(find_row, text="Find", font=FONT_SMALL).pack(side="left", padx=(0, 6))
-        ctk.CTkEntry(find_row, textvariable=self.find_text_var, width=180).pack(
-            side="left", padx=(0, 10)
-        )
-        ctk.CTkLabel(find_row, text="Replace", font=FONT_SMALL).pack(
-            side="left", padx=(0, 6)
-        )
-        ctk.CTkEntry(find_row, textvariable=self.replace_text_var, width=180).pack(
-            side="left", padx=(0, 10)
-        )
-        ctk.CTkLabel(find_row, text="Scope", font=FONT_SMALL).pack(
-            side="left", padx=(0, 6)
-        )
-        self.find_scope_combo = ctk.CTkComboBox(
-            find_row,
-            variable=self.find_scope_var,
+            textvariable=self.find_scope_var,
             values=("tag", "description", "both"),
             state="readonly",
-            width=120,
+            width=14,
         )
-        self.find_scope_combo.pack(side="left", padx=(0, 10))
-        ctk.CTkCheckBox(
-            find_row,
+        self.find_scope_combo.pack(side="left", padx=(0, 6))
+        ttk.Checkbutton(
+            self.find_replace_bar,
             text="Preview Changes",
             variable=self.preview_changes_var,
-            font=FONT_SMALL,
-        ).pack(side="left", padx=(0, 10))
-        self.find_replace_apply_button = ctk.CTkButton(
-            find_row, text="Apply", width=80, **self._accent_btn
+        ).pack(side="left", padx=(0, 6))
+        self.find_replace_apply_button = ttk.Button(self.find_replace_bar, text="Apply")
+        self.find_replace_apply_button.pack(side="left", padx=(0, 8))
+        self.find_replace_delete_button = ttk.Button(
+            self.find_replace_bar, text="Delete Matches"
         )
-        self.find_replace_apply_button.pack(side="left", padx=(0, 6))
-        self.find_replace_delete_button = ctk.CTkButton(
-            find_row, text="Delete Matches", width=120, **self._neutral_btn
+        self.find_replace_delete_button.pack(side="left", padx=(0, 8))
+        self.find_replace_clear_button = ttk.Button(self.find_replace_bar, text="Clear")
+        self.find_replace_clear_button.pack(side="left", padx=(0, 8))
+        ttk.Label(self.find_replace_bar, textvariable=self.find_replace_status_var).pack(
+            side="right", padx=(6, 0)
         )
-        self.find_replace_delete_button.pack(side="left", padx=6)
-        self.find_replace_clear_button = ctk.CTkButton(
-            find_row, text="Clear", width=80, **self._neutral_btn
-        )
-        self.find_replace_clear_button.pack(side="left", padx=6)
-        ctk.CTkLabel(
-            find_row,
-            textvariable=self.find_replace_status_var,
-            font=FONT_SMALL,
-            text_color=TEXT_MUTED,
-        ).pack(side="right", padx=(6, 0))
 
-        self.filter_frame = ctk.CTkFrame(main, corner_radius=CORNER_RADIUS)
-        self.filter_frame.pack(fill="x", pady=(4, 10))
-
-        filter_inner = ctk.CTkFrame(self.filter_frame, fg_color="transparent")
-        filter_inner.pack(fill="x", padx=12, pady=10)
-
-        ctk.CTkLabel(filter_inner, text="Vessel", font=FONT_SMALL).pack(
-            side="left", padx=(0, 8)
-        )
-        self.vessel_combo = ctk.CTkComboBox(
-            filter_inner,
-            variable=self.vessel_var,
-            values=["ALL"],
-            state="readonly",
-            width=180,
+        filter_bar = ttk.Frame(main)
+        filter_bar.pack(fill="x", pady=(12, 10))  
+        ttk.Label(filter_bar, text="Vessel").pack(side="left", padx=(0, 8))
+        self.vessel_combo = ttk.Combobox(
+            filter_bar, state="readonly", textvariable=self.vessel_var, width=24
         )
         self.vessel_combo.pack(side="left", padx=(0, 8))
-        self.reset_filter_button = ctk.CTkButton(
-            filter_inner, text="Reset Filter", width=100, **self._neutral_btn
-        )
+        self.reset_filter_button = ttk.Button(filter_bar, text="Reset Filter")
         self.reset_filter_button.pack(side="left", padx=(0, 18))
 
-        ctk.CTkLabel(filter_inner, text="Program", font=FONT_SMALL).pack(
-            side="left", padx=(0, 8)
-        )
-        self.program_filter_combo = ctk.CTkComboBox(
-            filter_inner,
-            variable=self.program_filter_var,
-            values=PROGRAM_FILTER_VALUES,
+        ttk.Label(filter_bar, text="Program").pack(side="left", padx=(0, 8))
+        self.program_filter_combo = ttk.Combobox(
+            filter_bar,
             state="readonly",
-            width=140,
+            textvariable=self.program_filter_var,
+            values=PROGRAM_FILTER_VALUES,
+            width=16,
         )
         self.program_filter_combo.pack(side="left", padx=(0, 18))
 
-        ctk.CTkLabel(filter_inner, text="Search", font=FONT_SMALL).pack(
+        ttk.Label(filter_bar, text="Search").pack(side="left", padx=(0, 8))
+        ttk.Entry(filter_bar, textvariable=self.search_var, width=30).pack(
             side="left", padx=(0, 8)
         )
-        ctk.CTkEntry(filter_inner, textvariable=self.search_var, width=220).pack(
-            side="left", padx=(0, 8)
-        )
-        self.view_conflicts_check = ctk.CTkCheckBox(
-            filter_inner,
+        self.view_conflicts_check = ttk.Checkbutton(
+            filter_bar,
             text="View Internal Mismatches (0)",
             variable=self.view_conflicts_var,
-            font=FONT_SMALL,
         )
         self.view_conflicts_check.pack(side="left", padx=(8, 6))
-        self.array_expand_toggle_button = ctk.CTkButton(
-            filter_inner,
+        self.array_expand_toggle_button = ttk.Button(
+            filter_bar,
             text="Expand All",
-            width=110,
-            **self._neutral_btn,
+            width=12,
         )
-        self.array_expand_toggle_button.pack(side="left")
+        self.array_expand_toggle_button.pack(side="left", padx=(0, 0))
 
-        table_frame = ctk.CTkFrame(main, corner_radius=CORNER_RADIUS)
-        table_frame.pack(fill="both", expand=True, pady=(0, 4))
-        self.tree, _y_scroll = create_tag_treeview(table_frame, height=16)
+        table_frame = ttk.Frame(main)
+        table_frame.pack(fill="both", expand=True)
+
+        self.tree = ttk.Treeview(
+            table_frame, columns=DEFAULT_TABLE_COLUMNS, show="headings", height=16
+        )
+        self.tree.heading("row_number", text="#")
+        self.tree.heading("tag_name", text="Tag")
+        self.tree.heading("proficy_name", text="Proficy Name")
+        self.tree.heading("cimplicity_pt_id", text="Cimplicity PT_ID")
+        self.tree.heading("description", text="Description")
+        self.tree.heading("address", text="Address")
+        self.tree.heading("sync_status", text="Sync")
+        self.tree.heading("conflict_group", text="Group")
+        self.tree.heading("vessels", text="Vessels")
+        self.tree.column("row_number", width=55, anchor="center")
+        self.tree.column("tag_name", width=150, anchor="w")
+        self.tree.column("proficy_name", width=140, anchor="w")
+        self.tree.column("cimplicity_pt_id", width=140, anchor="w")
+        self.tree.column("description", width=200, anchor="w")
+        self.tree.column("address", width=110, anchor="w")
+        self.tree.column("sync_status", width=100, anchor="w")
+        self.tree.column("conflict_group", width=60, anchor="center")
+        self.tree.column("vessels", width=140, anchor="w")
+        for index, color in enumerate(CONFLICT_GROUP_COLORS):
+            self.tree.tag_configure(f"conflict_g{index}", background=color)
+        self.tree.tag_configure("find_match", background="#fef3c7")
+        self.tree.tag_configure("sync_drift", background="#fff3e0")
+
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=y_scroll.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        y_scroll.pack(side="left", fill="y")
 
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Edit Tag")
@@ -276,13 +231,8 @@ class MainWindow:
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Delete Tag")
 
-        ctk.CTkLabel(
-            main,
-            textvariable=self.status_var,
-            font=FONT_SMALL,
-            text_color=TEXT_MUTED,
-            anchor="w",
-        ).pack(fill="x", pady=(8, 0))
+        status = ttk.Label(main, textvariable=self.status_var, anchor="w")
+        status.pack(fill="x", pady=(8, 0))
 
     def set_review_queue_count(self, count: int) -> None:
         if self.cimplicity_review_button is not None:
@@ -296,24 +246,26 @@ class MainWindow:
                 text=f"Cimplicity Tasks ({count})"
             )
             if count > 0:
-                self.cimplicity_tasks_button.configure(**self._warning_btn)
+                self.cimplicity_tasks_button.configure(style="ExportPending.TButton")
             else:
-                self.cimplicity_tasks_button.configure(**self._neutral_btn)
+                self.cimplicity_tasks_button.configure(style="TButton")
 
     def set_conflict_count(self, count: int) -> None:
+        """Updates the View Internal Mismatches checkbox label with the current count."""
         if self.view_conflicts_check is not None:
             self.view_conflicts_check.configure(
                 text=f"View Internal Mismatches ({count})"
             )
 
     def set_pending_change_count(self, count: int) -> None:
+        """Updates export button text/style based on pending changes."""
         if self.export_changes_button is None:
             return
         self.export_changes_button.configure(text=f"Export Proficy Changes ({count})")
         if count > 0:
-            self.export_changes_button.configure(**self._warning_btn)
+            self.export_changes_button.configure(style="ExportPending.TButton")
         else:
-            self.export_changes_button.configure(**self._accent_btn)
+            self.export_changes_button.configure(style="TButton")
 
     def set_find_replace_status(
         self,
@@ -323,6 +275,7 @@ class MainWindow:
         change_count: int,
         preview_on: bool,
     ) -> None:
+        """Updates the find/replace status line."""
         parts: list[str] = []
         if find_active:
             parts.append(f"{match_count} match{'es' if match_count != 1 else ''}")
@@ -337,17 +290,14 @@ class MainWindow:
         self.find_replace_status_var.set(" · ".join(parts))
 
     def toggle_find_replace_visibility(self) -> None:
-        if (
-            self.find_replace_bar is None
-            or self.find_replace_button is None
-            or self.filter_frame is None
-        ):
+        """Shows/hides the find & replace section and updates button text."""
+        if self.find_replace_bar is None or self.find_replace_button is None:
             return
         if self._find_replace_visible:
             self.find_replace_bar.pack_forget()
             self.find_replace_button.configure(text="Find & Replace ▸")
             self._find_replace_visible = False
             return
-        self.find_replace_bar.pack(fill="x", pady=(4, 8), before=self.filter_frame)
+        self.find_replace_bar.pack(fill="x", pady=(10, 8), before=self.vessel_combo.master)
         self.find_replace_button.configure(text="Find & Replace ▾")
         self._find_replace_visible = True
