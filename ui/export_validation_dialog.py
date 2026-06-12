@@ -3,20 +3,15 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import scrolledtext, ttk
 
-from services.export_validation_service import ExportValidationResult
+from models.export_validation_result import ExportValidationResult
+from ui.report_dialog import ReportDialog
 
 
 class ExportValidationDialog:
     """Summarizes per-file export validation."""
 
     def __init__(self, parent: tk.Tk, results: list[ExportValidationResult]) -> None:
-        self._window = tk.Toplevel(parent)
-        self._window.title("Export Validation")
-        self._window.geometry("640x480")
-        self._window.transient(parent)
-
         lines: list[str] = []
         for result in results:
             status = "OK" if result.ok else "ISSUES"
@@ -34,13 +29,6 @@ class ExportValidationDialog:
                 )
             lines.append("")
 
-        text = scrolledtext.ScrolledText(self._window, height=22, wrap="word")
-        text.pack(fill="both", expand=True, padx=14, pady=14)
-        text.insert("1.0", "\n".join(lines) if lines else "No files validated.")
-        text.configure(state="disabled")
-
-        ttk.Button(self._window, text="Close", command=self._window.destroy).pack(
-            pady=(0, 14)
-        )
-        self._window.grab_set()
-        self._window.wait_window()
+        self._dialog = ReportDialog(parent, "Export Validation")
+        self._dialog.set_content("\n".join(lines) if lines else "No files validated.")
+        self._dialog.show_readonly()

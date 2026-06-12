@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import simpledialog, ttk
+from tkinter import ttk
+
+from ui.tag_form_dialog import VesselListEditor
 
 
 class AddTagDialog:
@@ -32,19 +34,17 @@ class AddTagDialog:
     def _build_ui(self, vessels: list[str]) -> None:
         form = ttk.Frame(self._window, padding=14)
         form.pack(fill="x")
-
-        ttk.Label(form, text="Tag").grid(row=0, column=0, sticky="w", pady=(0, 8))
-        ttk.Entry(form, textvariable=self._tag_var, width=52).grid(
-            row=0, column=1, sticky="ew", pady=(0, 8)
-        )
-        ttk.Label(form, text="Description").grid(row=1, column=0, sticky="w", pady=(0, 8))
-        ttk.Entry(form, textvariable=self._description_var, width=52).grid(
-            row=1, column=1, sticky="ew", pady=(0, 8)
-        )
-        ttk.Label(form, text="Address").grid(row=2, column=0, sticky="w", pady=(0, 8))
-        ttk.Entry(form, textvariable=self._address_var, width=52).grid(
-            row=2, column=1, sticky="ew", pady=(0, 8)
-        )
+        for row, (label, var) in enumerate(
+            (
+                ("Tag", self._tag_var),
+                ("Description", self._description_var),
+                ("Address", self._address_var),
+            )
+        ):
+            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=(0, 8))
+            ttk.Entry(form, textvariable=var, width=52).grid(
+                row=row, column=1, sticky="ew", pady=(0, 8)
+            )
         ttk.Label(form, text="Program").grid(row=3, column=0, sticky="w", pady=(0, 8))
         ttk.Combobox(
             form,
@@ -62,54 +62,22 @@ class AddTagDialog:
 
         vessel_frame = ttk.LabelFrame(self._window, text="Vessels", padding=10)
         vessel_frame.pack(fill="both", expand=True, padx=14, pady=(0, 12))
-        self._vessel_list = tk.Listbox(vessel_frame, selectmode="extended", height=12)
-        self._vessel_list.pack(fill="both", expand=True, side="left")
-        for vessel in vessels:
-            self._vessel_list.insert("end", vessel)
-
-        button_column = ttk.Frame(vessel_frame)
-        button_column.pack(side="left", fill="y", padx=(8, 0))
-        ttk.Button(button_column, text="Add Vessel", command=self._add_vessel).pack(
-            fill="x", pady=(0, 6)
-        )
-        ttk.Button(button_column, text="Remove Selected", command=self._remove_selected).pack(
-            fill="x"
-        )
+        self._vessel_editor = VesselListEditor(vessel_frame, vessels)
+        self._vessel_editor.pack(fill="both", expand=True)
 
         actions = ttk.Frame(self._window, padding=(14, 0, 14, 14))
         actions.pack(fill="x")
         ttk.Button(actions, text="Cancel", command=self._cancel).pack(side="right")
         ttk.Button(actions, text="Create", command=self._save).pack(side="right", padx=(0, 8))
 
-    def _add_vessel(self) -> None:
-        vessel = simpledialog.askstring("Add Vessel", "Vessel name:", parent=self._window)
-        if not vessel:
-            return
-        vessel = vessel.strip().upper()
-        if not vessel:
-            return
-        existing = {self._vessel_list.get(index) for index in range(self._vessel_list.size())}
-        if vessel in existing:
-            return
-        self._vessel_list.insert("end", vessel)
-
-    def _remove_selected(self) -> None:
-        for index in reversed(self._vessel_list.curselection()):
-            self._vessel_list.delete(index)
-
     def _save(self) -> None:
-        vessels = {
-            self._vessel_list.get(index).strip().upper()
-            for index in range(self._vessel_list.size())
-            if self._vessel_list.get(index).strip()
-        }
         self._result = {
             "tag_name": self._tag_var.get().strip().upper(),
             "description": self._description_var.get().strip().upper(),
             "address": self._address_var.get().strip().upper(),
             "program": self._program_var.get().strip().lower(),
             "queue_proficy": bool(self._queue_var.get()),
-            "vessels": vessels,
+            "vessels": self._vessel_editor.vessel_names(),
         }
         self._window.destroy()
 

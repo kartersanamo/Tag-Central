@@ -16,16 +16,7 @@ MISMATCH_PT_ID_PREFIX = "pt_id_prefix"
 _ARRAY_INDEX_PATTERN = re.compile(r"^(?P<base>.+)\[(?P<index>\d+)\]$")
 
 
-@dataclass
-class InternalMismatchResult:
-    """Maps tags to mismatch groups and types."""
-
-    conflicted_tags: set[str] = field(default_factory=set)
-    peers: dict[str, list[str]] = field(default_factory=dict)
-    group_labels: dict[str, str] = field(default_factory=dict)
-    mismatch_types: dict[str, str] = field(default_factory=dict)
-
-
+from models.internal_mismatch_result import InternalMismatchResult
 def _tag_address(record: TagRecord) -> str:
     if record.linked_address and is_resolvable_address(record.linked_address):
         return normalize_address(record.linked_address)

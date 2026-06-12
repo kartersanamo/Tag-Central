@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Tag Center — onedir bundle for fast startup (no one-file extract)."""
+"""PyInstaller spec for Tag Central — onedir bundle for fast startup (no one-file extract)."""
 
 import sys
 from pathlib import Path
@@ -87,7 +87,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Tag Center",
+    name="Tag Central",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -109,18 +109,18 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="Tag Center",
+    name="Tag Central",
 )
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="Tag Center.app",
+        name="Tag Central.app",
         icon=icon_file,
         bundle_identifier="com.eco.tagcentral",
         info_plist={
-            "CFBundleName": "Tag Center",
-            "CFBundleDisplayName": "Tag Center",
+            "CFBundleName": "Tag Central",
+            "CFBundleDisplayName": "Tag Central",
             "CFBundleShortVersionString": "1.0.0",
             "CFBundleVersion": "1.0.0",
             "CFBundleIdentifier": "com.eco.tagcentral",

@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "Tag Center"
+APP_NAME = "Tag Central"
 APP_VERSION = "1.0.0"
 APP_ORGANIZATION = "ECO"
 APP_BUNDLE_ID = "com.eco.tagcentral"
@@ -40,16 +40,16 @@ def app_install_dir() -> Path:
     """
     Directory where the application lives (for Exports / Documentation siblings).
 
-    macOS .app: folder containing Tag Center.app (e.g. ~/Downloads)
-    Windows onedir: folder containing the Tag Center install folder
+    macOS .app: folder containing Tag Central.app (e.g. ~/Downloads)
+    Windows onedir: folder containing the Tag Central install folder
     Development: project root (folder with main.py), e.g. .../Tag Central/
     """
     if is_frozen():
         executable = Path(sys.executable).resolve()
         if sys.platform == "darwin":
-            # .../Tag Center.app/Contents/MacOS/Tag Center → .../Downloads
+            # .../Tag Central.app/Contents/MacOS/Tag Central → .../Downloads
             return executable.parent.parent.parent.parent
-        # .../Tag Center/Tag Center.exe → parent of onedir folder
+        # .../Tag Central/Tag Central.exe → parent of onedir folder
         return executable.parent.parent
     return Path(__file__).resolve().parent
 
@@ -58,7 +58,7 @@ def export_dir(*, project_root: Path | None = None) -> Path:
     """
     Folder for Proficy/Cimplicity export CSVs next to where the app is installed.
 
-    Example: ~/Downloads/Tag Center.app → ~/Downloads/Exports/
+    Example: ~/Downloads/Tag Central.app → ~/Downloads/Exports/
     """
     del project_root  # kept for API compatibility with app_config
     return app_install_dir() / "Exports"

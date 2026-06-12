@@ -1,12 +1,11 @@
-# Build Tag Center for Windows (Tag Center.exe in dist\).
-# Run in PowerShell from the project root:
-#   .\build-windows.ps1
+# Build Tag Central for Windows (Tag Central.exe in dist\).
+# Run in PowerShell from the project root: .\build-windows.ps1
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 Set-Location $Root
 
-Write-Host "==> Tag Center — Windows build"
+Write-Host "==> Tag Central — Windows build"
 Write-Host "    Project: $Root"
 
 $Python = if ($env:PYTHON) { $env:PYTHON } else { "python" }
@@ -23,7 +22,7 @@ Write-Host "==> Installing build dependencies"
 & $VenvPip install -q --upgrade pip
 & $VenvPip install -q -r requirements-build.txt
 
-Write-Host "==> Generating icons (.png, .ico)"
+Write-Host "==> Generating icons"
 & $VenvPython scripts/generate_icons.py
 
 if (-not (Test-Path "assets\icon.ico")) {
@@ -33,14 +32,11 @@ if (-not (Test-Path "assets\icon.ico")) {
 Write-Host "==> Running PyInstaller"
 & (Join-Path $Root ".venv\Scripts\pyinstaller.exe") --noconfirm --clean scripts\tag_central.spec
 
-$ExePath = Join-Path $Root "dist\Tag Center\Tag Center.exe"
+$ExePath = Join-Path $Root "dist\Tag Central\Tag Central.exe"
 if (-not (Test-Path $ExePath)) {
     throw "Expected $ExePath (onedir build)"
 }
 
 Write-Host ""
-Write-Host "Build complete:"
-Write-Host "  $ExePath"
-Write-Host ""
-Write-Host "User data when running the .exe:"
-Write-Host "  %APPDATA%\TagCenter\"
+Write-Host "Build complete: $ExePath"
+Write-Host "User data: %APPDATA%\TagCentral\"

@@ -18,62 +18,21 @@ from services.address_normalizer import (
     is_resolvable_address,
     normalize_address,
 )
-from services.cimplicity_review_queue import CimplicityReviewQueue, ReviewQueueItem
+from models.cimplicity_import import (
+    CimplicityImportRow,
+    CimplicityImportSummary,
+    CimplicitySyncAction,
+)
+from models.link_result import LinkResult
+from models.review_queue_item import ReviewQueueItem
+from services.cimplicity_review_queue import CimplicityReviewQueue
 from services.debug_logger import debug_logger
-from services.tag_link_service import LinkResult, TagLinkService
+from services.tag_link_service import TagLinkService
 
 
 def normalize_description(text: str) -> str:
     """Canonical descriptions are uppercase for consistency."""
     return " ".join(text.strip().upper().split())
-
-
-@dataclass
-class CimplicityImportRow:
-    """Prepared Cimplicity import row for sync processing."""
-
-    pt_id: str
-    description: str
-    address: str
-    row_data: dict[str, str]
-    row_index: int
-
-
-@dataclass
-class CimplicitySyncAction:
-    """One row requiring user decision during Cimplicity import."""
-
-    row_index: int
-    pt_id: str
-    cimplicity_description: str
-    address: str
-    row_data: dict[str, str]
-    existing_tag: str
-    existing_description: str
-    proficy_name: str
-    issue: str
-    default_action: str = "align_proficy"
-
-
-@dataclass
-class CimplicityImportSummary:
-    """Aggregated results from a Cimplicity import pass."""
-
-    total_rows: int = 0
-    linked_synced: int = 0
-    auto_aligned: int = 0
-    review_queue_added: int = 0
-    skipped: int = 0
-    proficy_exports_queued: int = 0
-    manual_cimplicity_flags: int = 0
-    actionable: list[CimplicitySyncAction] = field(default_factory=list)
-    matched_exact_id: int = 0
-    matched_cimplicity_pt_id: int = 0
-    matched_address: int = 0
-    matched_alias: int = 0
-    ambiguous_address: int = 0
-    unmatched: int = 0
-    report_lines: list[str] = field(default_factory=list)
 
 
 class CrossProgramSyncService:

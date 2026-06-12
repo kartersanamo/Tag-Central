@@ -2,7 +2,7 @@
 
 import unittest
 
-from app_controller import AppController
+from services.export_queue_service import export_fields_for_compare
 
 
 class TestExportQueueCompare(unittest.TestCase):
@@ -21,16 +21,16 @@ class TestExportQueueCompare(unittest.TestCase):
             "DataType": "INT",
         }
         self.assertEqual(
-            AppController._export_fields_for_compare(original),
-            AppController._export_fields_for_compare(updated),
+            export_fields_for_compare(original),
+            export_fields_for_compare(updated),
         )
 
     def test_description_change_is_detected(self) -> None:
         before = {"Name": "PUMP", "Description": "OLD", "IOAddress": "%R00001"}
         after = {"Name": "PUMP", "Description": "NEW", "IOAddress": "%R00001"}
         self.assertNotEqual(
-            AppController._export_fields_for_compare(before),
-            AppController._export_fields_for_compare(after),
+            export_fields_for_compare(before),
+            export_fields_for_compare(after),
         )
 
 

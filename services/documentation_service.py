@@ -63,33 +63,11 @@ DOCUMENT_TYPES: dict[str, tuple[str, str]] = {
 }
 
 
-@dataclass(frozen=True)
-class DocumentationColumn:
-    """One column in a generated table."""
-
-    key: str
-    header: str
-
-
-@dataclass
-class DocumentationTable:
-    """Tabular document section."""
-
-    doc_id: str
-    title: str
-    summary: str
-    columns: list[DocumentationColumn]
-    rows: list[dict[str, str]] = field(default_factory=list)
-
-
-@dataclass
-class DocumentationPackageResult:
-    """Paths written by a documentation export run."""
-
-    output_dir: Path
-    written_files: list[Path] = field(default_factory=list)
-
-
+from models.documentation import (
+    DocumentationColumn,
+    DocumentationPackageResult,
+    DocumentationTable,
+)
 class DocumentationService:
     """Builds documentation tables and writes multi-format export packages."""
 

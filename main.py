@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tkinter as tk
 
 from app_identity import APP_NAME, APP_VERSION, ensure_user_data_layout, is_frozen
 
@@ -13,46 +12,52 @@ import app_config  # noqa: F401
 import app_controller  # noqa: F401
 
 
-def _apply_window_icon(root: tk.Tk) -> None:
-    """Sets the window (and taskbar on Windows) icon when assets are available."""
+def main() -> None:
+    """Starts CLI or GUI depending on --cli flag."""
+    if "--cli" in sys.argv:
+        sys.argv.remove("--cli")
+        from cli.main import run_cli
+
+        raise SystemExit(run_cli())
+
+    import tkinter as tk
+
     from app_identity import icon_ico_path, icon_png_path
 
-    try:
-        if sys.platform == "win32" and icon_ico_path().exists():
-            root.iconbitmap(default=str(icon_ico_path()))
-            return
-        png_path = icon_png_path()
-        if png_path.exists():
-            icon_image = tk.PhotoImage(file=str(png_path))
-            root.iconphoto(True, icon_image)
-            root._tag_central_icon = icon_image  # prevent garbage collection
-    except tk.TclError:
-        pass
+    def _apply_window_icon(root: tk.Tk) -> None:
+        """Sets the window (and taskbar on Windows) icon when assets are available."""
+        try:
+            if sys.platform == "win32" and icon_ico_path().exists():
+                root.iconbitmap(default=str(icon_ico_path()))
+                return
+            png_path = icon_png_path()
+            if png_path.exists():
+                icon_image = tk.PhotoImage(file=str(png_path))
+                root.iconphoto(True, icon_image)
+                root._tag_central_icon = icon_image  # prevent garbage collection
+        except tk.TclError:
+            pass
 
+    def _show_startup_error(root: tk.Tk, error: BaseException) -> None:
+        """Shows a dialog when the packaged app fails during startup."""
+        import traceback
+        from tkinter import messagebox
 
-def _show_startup_error(root: tk.Tk, error: BaseException) -> None:
-    """Shows a dialog when the packaged app fails during startup."""
-    import traceback
-    from tkinter import messagebox
-
-    details = "".join(
-        traceback.format_exception(type(error), error, error.__traceback__)
-    )
-    try:
-        messagebox.showerror(
-            f"{APP_NAME} — startup failed",
-            "The application could not start.\n\n"
-            f"{error}\n\n"
-            "See details below and contact support if this continues.\n\n"
-            f"{details[:2000]}",
-            parent=root,
+        details = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
         )
-    except tk.TclError:
-        print(details, file=sys.stderr)
+        try:
+            messagebox.showerror(
+                f"{APP_NAME} — startup failed",
+                "The application could not start.\n\n"
+                f"{error}\n\n"
+                "See details below and contact support if this continues.\n\n"
+                f"{details[:2000]}",
+                parent=root,
+            )
+        except tk.TclError:
+            print(details, file=sys.stderr)
 
-
-def main() -> None:
-    """Starts the application with an immediate splash, then loads the main UI."""
     if is_frozen():
         ensure_user_data_layout()
 
@@ -64,7 +69,7 @@ def main() -> None:
         from ui.startup_splash import StartupSplash
 
         splash = StartupSplash(root)
-        splash.set_status("Starting Tag Center…")
+        splash.set_status("Starting Tag Central…")
 
         splash.set_status("Loading modules…")
         from app_config import MIN_WINDOW_SIZE, WINDOW_SIZE
@@ -97,7 +102,7 @@ def main() -> None:
 
         root.lift()
         root.focus_force()
-        if os.environ.get("TAG_CENTER_QUIT_AFTER_STARTUP"):
+        if os.environ.get("TAG_CENTRAL_QUIT_AFTER_STARTUP"):
             root.after(100, root.quit)
         root.mainloop()
     except Exception as error:

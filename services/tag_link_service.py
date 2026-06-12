@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
-
+from models.link_result import LinkResult, LinkMethod
 from models.tag_record import TagRecord
 from services.address_normalizer import (
     addresses_equivalent,
@@ -13,17 +11,6 @@ from services.address_normalizer import (
 )
 from services.debug_logger import debug_logger
 from services.tag_alias_rules import TagAliasRules
-
-LinkMethod = Literal["exact_id", "address", "alias", "cimplicity_pt_id", "manual"]
-
-
-@dataclass(slots=True)
-class LinkResult:
-    """Result of attempting to link a Cimplicity row to the database."""
-
-    canonical_tag: str | None
-    method: LinkMethod | None
-    ambiguous_tags: list[str]
 
 
 class TagLinkService:

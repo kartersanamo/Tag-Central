@@ -25,7 +25,6 @@ EXPORT_FOLDER = export_dir(project_root=PROJECT_ROOT)
 BACKUP_FOLDER = _DATA_ROOT / "backups"
 ALIAS_RULES_FILE = _DATA_ROOT / "alias_rules.json"
 CIMPLICITY_REVIEW_QUEUE_FILE = _DATA_ROOT / "cimplicity_review_queue.json"
-CIMPLICITY_MANUAL_REPORT_FILE = _DATA_ROOT / "cimplicity_manual_report.json"
 CIMPLICITY_MANUAL_TASKS_FILE = _DATA_ROOT / "cimplicity_manual_tasks.json"
 
 DEFAULT_TABLE_COLUMNS = (
